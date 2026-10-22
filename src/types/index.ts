@@ -7,10 +7,11 @@ export type MouthAction = 'left_click' | 'drag_toggle' | 'scroll_toggle';
 export type DwellAction = 'left_click' | 'right_click' | 'double_click';
 
 export interface TrackingConfig {
-  sensitivityX: number; // 0.5 - 5.0
-  sensitivityY: number; // 0.5 - 5.0
+  masterSensitivity?: number; // 0.2 - 6.0 (overall scaling)
+  sensitivityX: number; // 0.2 - 6.0
+  sensitivityY: number; // 0.2 - 6.0
   smoothing: number; // 0.05 (heavy) - 0.95 (raw)
-  deadzone: number; // 0.005 - 0.05
+  deadzone: number; // 0.002 - 0.04
   acceleration: number; // 1.0 - 2.5
   invertX: boolean;
   invertY: boolean;

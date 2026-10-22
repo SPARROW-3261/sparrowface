@@ -92,9 +92,8 @@ export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
         </div>
       </div>
 
-      {!isMinimized && (
-        <div className="p-3">
-          {/* Video Preview */}
+      <div className={`p-3 ${isMinimized ? 'hidden' : 'block'}`}>
+        {/* Video Preview */}
           <div className="relative aspect-video rounded-lg overflow-hidden bg-neutral-950 border border-neutral-800 mb-3">
             <video
               ref={hudVideoRef}
@@ -193,7 +192,6 @@ export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
             <span>Recenter Head (or Spacebar)</span>
           </button>
         </div>
-      )}
-    </div>
-  );
-};
+      </div>
+    );
+  };

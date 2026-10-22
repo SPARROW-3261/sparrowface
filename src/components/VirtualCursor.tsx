@@ -55,8 +55,13 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
 
     // Dispatch real DOM event to element beneath
     try {
-      const element = document.elementFromPoint(cx, cy);
-      if (element) {
+      const rawElement = document.elementFromPoint(cx, cy);
+      if (rawElement) {
+        // Resolve closest interactive element (button, link, input, taskbar tab, desktop shortcut)
+        const target =
+          (rawElement.closest('button, a, input, select, textarea, [role="button"], [tabindex]') as HTMLElement) ||
+          (rawElement as HTMLElement);
+
         const mouseEventInit = {
           bubbles: true,
           cancelable: true,
@@ -66,19 +71,19 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
           button: button === 'right' ? 2 : 0,
         };
 
-        element.dispatchEvent(new MouseEvent('mousedown', mouseEventInit));
-        element.dispatchEvent(new MouseEvent('mouseup', mouseEventInit));
-        element.dispatchEvent(new MouseEvent('click', mouseEventInit));
+        target.dispatchEvent(new MouseEvent('mousedown', mouseEventInit));
+        target.dispatchEvent(new MouseEvent('mouseup', mouseEventInit));
+        target.dispatchEvent(new MouseEvent('click', mouseEventInit));
 
         if (button === 'right') {
-          element.dispatchEvent(new MouseEvent('contextmenu', mouseEventInit));
+          target.dispatchEvent(new MouseEvent('contextmenu', mouseEventInit));
         }
 
-        // Focus text inputs
-        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-          element.focus();
-        } else if (typeof (element as HTMLElement).click === 'function') {
-          (element as HTMLElement).click();
+        // Focus text inputs or trigger native click on interactive button
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+          target.focus();
+        } else if (button === 'left' && typeof target.click === 'function') {
+          target.click();
         }
       }
     } catch {

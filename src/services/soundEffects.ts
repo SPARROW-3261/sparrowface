@@ -144,6 +144,32 @@ class SoundService {
       // Ignore
     }
   }
+
+  public playVoiceCommand() {
+    if (!this.enabled) return;
+    try {
+      this.initContext();
+      if (!this.ctx) return;
+
+      const now = this.ctx.currentTime;
+      // Ascending futuristic chime (523.25 Hz -> 659.25 Hz -> 1046.5 Hz)
+      [523.25, 659.25, 1046.5].forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+        gain.gain.setValueAtTime(0.1, now + idx * 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.12);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + idx * 0.05);
+        osc.stop(now + idx * 0.05 + 0.13);
+      });
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 export const sounds = new SoundService();

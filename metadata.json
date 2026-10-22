@@ -1,6 +1,6 @@
 {
   "name": "AeroFace - Face & Head Motion Desktop Cursor Control",
   "description": "Control desktop and virtual computer cursors seamlessly using real-time webcam face tracking, head tilt, eye blinks, and mouth gestures.",
-  "requestFramePermissions": ["camera"],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

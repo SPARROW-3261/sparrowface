@@ -3,7 +3,7 @@
  * Complete interactive desktop operating system controlled entirely by face movement
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DesktopWindow, FaceTrackingState, NativeBridgeStatus, TrackingConfig } from '../types';
 import { TargetPracticeApp } from './apps/TargetPracticeApp';
 import { FacePaintApp } from './apps/FacePaintApp';
@@ -42,6 +42,9 @@ import {
   User,
   Lock,
   LogOut,
+  Mic,
+  MicOff,
+  HelpCircle,
 } from 'lucide-react';
 
 interface InteractiveDesktopProps {
@@ -55,6 +58,14 @@ interface InteractiveDesktopProps {
   onToggleCursorFreeze: () => void;
   onStartCalibration: () => void;
   onOpenNativeBridge: () => void;
+  isVoiceListening?: boolean;
+  voiceTranscript?: string;
+  lastVoiceAction?: { command: string; label: string; timestamp: number } | null;
+  voiceError?: string | null;
+  isSpeechSupported?: boolean;
+  onToggleVoice?: () => void;
+  onOpenVoiceCheatsheet?: () => void;
+  requestedAppOpen?: { id: string; timestamp: number } | null;
 }
 
 const INITIAL_WINDOWS: DesktopWindow[] = [
@@ -201,10 +212,19 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
   onToggleCursorFreeze,
   onStartCalibration,
   onOpenNativeBridge,
+  isVoiceListening = false,
+  voiceTranscript = '',
+  lastVoiceAction = null,
+  voiceError = null,
+  isSpeechSupported = true,
+  onToggleVoice,
+  onOpenVoiceCheatsheet,
+  requestedAppOpen,
 }) => {
   const [windows, setWindows] = useState<DesktopWindow[]>(INITIAL_WINDOWS);
-  const [activeWindowId, setActiveWindowId] = useState<string>('target_practice');
+  const [activeWindowId, setActiveWindowId] = useState<string | null>('target_practice');
   const [startMenuOpen, setStartMenuOpen] = useState<boolean>(false);
+  const [sensitivityQuickMenuOpen, setSensitivityQuickMenuOpen] = useState<boolean>(false);
   const [wallpaper, setWallpaper] = useState<'aurora' | 'minimal'>('aurora');
 
   // Dragging window state
@@ -255,6 +275,13 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
     setActiveWindowId(id);
   };
 
+  // Automatically open window requested via speech-to-intent engine
+  useEffect(() => {
+    if (requestedAppOpen?.id) {
+      openApp(requestedAppOpen.id);
+    }
+  }, [requestedAppOpen]);
+
   const closeWindow = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     sounds.playClick('left');
@@ -264,16 +291,24 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
   const toggleMinimize = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     sounds.playClick('left');
-    setWindows((prev) =>
-      prev.map((w) => {
+    setWindows((prev) => {
+      const updated = prev.map((w) => {
         if (w.id === id) {
           const nextMin = !w.isMinimized;
-          if (!nextMin) setActiveWindowId(id);
           return { ...w, isMinimized: nextMin };
         }
         return w;
-      })
-    );
+      });
+      const targetWin = updated.find((w) => w.id === id);
+      if (targetWin?.isMinimized) {
+        // If minimizing current active window, focus next visible window or clear to desktop
+        const nextActive = updated.find((w) => w.isOpen && !w.isMinimized);
+        setActiveWindowId(nextActive ? nextActive.id : null);
+      } else {
+        setActiveWindowId(id);
+      }
+      return updated;
+    });
   };
 
   const toggleMaximize = (id: string, e?: React.MouseEvent) => {
@@ -337,9 +372,16 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
       <div className="absolute inset-0 bg-neutral-950/20 backdrop-brightness-95 pointer-events-none" />
 
       {/* Desktop Main Workspace Area */}
-      <div className="relative flex-1 p-6 overflow-hidden">
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setActiveWindowId(null);
+          }
+        }}
+        className="relative flex-1 p-6 overflow-hidden cursor-default"
+      >
         {/* Desktop Application Icons Grid */}
-        <div className="flex flex-col flex-wrap gap-4 h-full max-w-xs z-10">
+        <div className="relative flex flex-col flex-wrap gap-4 h-full max-w-xs z-10 pointer-events-auto">
           {[
             { id: 'camera', label: 'Face Camera', icon: 'camera', desc: 'Live face tracking' },
             { id: 'performance_logger', label: 'Perf Logger', icon: 'activity', desc: 'FPS & jitter JSON' },
@@ -383,6 +425,28 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               </div>
               <div className="text-[10px] text-neutral-400 truncate">
                 {nativeStatus.connected ? 'Active Bridge' : 'Setup Real OS'}
+              </div>
+            </div>
+          </button>
+
+          {/* Voice Commands Cheat Sheet Shortcut */}
+          <button
+            onClick={onOpenVoiceCheatsheet}
+            className="group flex items-center gap-3 w-44 p-2 rounded-xl bg-neutral-900/60 hover:bg-neutral-800/90 border border-neutral-800/70 hover:border-cyan-500/50 backdrop-blur-md transition-all text-left shadow-lg active:scale-95"
+          >
+            <div className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors shrink-0 shadow-sm ${
+              isVoiceListening
+                ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white'
+                : 'bg-neutral-950/80 border-neutral-700/60 text-neutral-400 group-hover:text-cyan-300'
+            }`}>
+              {isVoiceListening ? <Mic className="w-5 h-5 animate-pulse" /> : <MicOff className="w-5 h-5" />}
+            </div>
+            <div className="overflow-hidden">
+              <div className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors truncate flex items-center gap-1">
+                <span>Voice Control</span>
+              </div>
+              <div className="text-[10px] text-neutral-400 truncate">
+                {isVoiceListening ? 'Listening "Sparrow..."' : 'Voice command list'}
               </div>
             </div>
           </button>
@@ -480,6 +544,9 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
                       onUpdateConfig={onUpdateConfig}
                       onRecenter={onRecenter}
                       onStartCalibration={onStartCalibration}
+                      trackingState={trackingState}
+                      isVoiceListening={isVoiceListening}
+                      onToggleVoice={onToggleVoice}
                     />
                   )}
                   {win.id === 'profile_presets' && (
@@ -608,6 +675,16 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               <MonitorCheck className="w-3.5 h-3.5" />
               <span>Host Bridge</span>
             </button>
+            <button
+              onClick={() => {
+                if (onOpenVoiceCheatsheet) onOpenVoiceCheatsheet();
+                setStartMenuOpen(false);
+              }}
+              className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 font-medium py-1 px-2 rounded hover:bg-neutral-800"
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>Voice</span>
+            </button>
           </div>
         </div>
       )}
@@ -639,12 +716,23 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               .map((w) => (
                 <button
                   key={w.id}
-                  onClick={() => toggleMinimize(w.id)}
+                  onClick={() => {
+                    if (w.isMinimized) {
+                      bringToFront(w.id);
+                    } else if (activeWindowId === w.id) {
+                      toggleMinimize(w.id);
+                    } else {
+                      bringToFront(w.id);
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
                     activeWindowId === w.id && !w.isMinimized
                       ? 'bg-neutral-800 text-cyan-300 border-cyan-500/40 shadow-sm'
-                      : 'bg-neutral-900/60 text-neutral-400 hover:text-white border-neutral-800'
+                      : w.isMinimized
+                      ? 'bg-neutral-950/80 text-neutral-400 hover:text-cyan-300 border-neutral-800/80'
+                      : 'bg-neutral-900/60 text-neutral-300 hover:text-white border-neutral-800'
                   }`}
+                  title={`${w.title} (${w.isMinimized ? 'Minimized - Click to restore' : 'Click to minimize/focus'})`}
                 >
                   <span className="text-cyan-400">{getAppIcon(w.icon, 'w-3 h-3')}</span>
                   <span className="truncate max-w-[100px]">{w.title}</span>
@@ -696,6 +784,158 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               Space
             </kbd>
           </button>
+
+          {/* Quick Sensitivity Control & Flyout */}
+          <div className="relative">
+            <button
+              onClick={() => setSensitivityQuickMenuOpen(!sensitivityQuickMenuOpen)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-all shadow-sm ${
+                sensitivityQuickMenuOpen
+                  ? 'bg-cyan-950 text-cyan-300 border-cyan-500 ring-1 ring-cyan-500/50'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+              }`}
+              title="Quick Adjust Cursor Sensitivity (Slider & Inputs)"
+            >
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{config.sensitivityX.toFixed(1)}x</span>
+            </button>
+
+            {sensitivityQuickMenuOpen && (
+              <div className="absolute bottom-11 right-0 w-72 bg-neutral-900/95 border border-neutral-800 rounded-xl shadow-2xl backdrop-blur-xl p-3 z-50 select-none animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                    <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Quick Sensitivity Tuning</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSensitivityQuickMenuOpen(false);
+                      openApp('settings');
+                    }}
+                    className="text-[10px] text-cyan-400 hover:underline"
+                  >
+                    Full Settings
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="text-neutral-400">Responsiveness</span>
+                      <span className="font-mono text-cyan-400">{config.sensitivityX.toFixed(1)}x</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="6.0"
+                        step="0.1"
+                        value={config.sensitivityX}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          onUpdateConfig({
+                            masterSensitivity: val,
+                            sensitivityX: val,
+                            sensitivityY: val,
+                          });
+                        }}
+                        className="flex-1 h-1.5 bg-neutral-800 rounded appearance-none cursor-pointer accent-cyan-500"
+                      />
+                      <input
+                        type="number"
+                        min="0.2"
+                        max="6.0"
+                        step="0.1"
+                        value={Number(config.sensitivityX.toFixed(1))}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            onUpdateConfig({
+                              masterSensitivity: val,
+                              sensitivityX: val,
+                              sensitivityY: val,
+                            });
+                          }
+                        }}
+                        className="w-12 bg-neutral-950 border border-neutral-800 rounded px-1.5 py-0.5 text-xs font-mono text-cyan-400 text-right focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-neutral-800/80">
+                    {[
+                      { label: '1.2x', val: 1.2 },
+                      { label: '2.2x', val: 2.2 },
+                      { label: '3.2x', val: 3.2 },
+                      { label: '4.5x', val: 4.5 },
+                    ].map((p) => (
+                      <button
+                        key={p.val}
+                        onClick={() => {
+                          onUpdateConfig({
+                            masterSensitivity: p.val,
+                            sensitivityX: p.val,
+                            sensitivityY: p.val,
+                          });
+                        }}
+                        className={`py-1 text-[10px] font-mono rounded border transition-colors ${
+                          Math.abs(config.sensitivityX - p.val) < 0.15
+                            ? 'bg-cyan-950 border-cyan-500 text-cyan-300 font-bold'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Voice Commands Status / Quick Unmute / Cheatsheet */}
+          <div className="flex items-center">
+            <button
+              onClick={onToggleVoice}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-l-lg border border-r-0 text-xs transition-all ${
+                isVoiceListening
+                  ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900/80 shadow-sm'
+                  : 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300 hover:bg-cyan-900/90 shadow-sm animate-pulse'
+              }`}
+              title={
+                isVoiceListening
+                  ? 'Voice Commands: Active (Say "Sparrow recenter", "Sparrow stop", etc.) - Click to Mute'
+                  : 'Voice Commands: Muted - Click to UNMUTE Microphone and start listening'
+              }
+            >
+              {isVoiceListening ? (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <span className="text-[11px] font-semibold text-emerald-300">
+                    Voice Active
+                  </span>
+                </>
+              ) : (
+                <>
+                  <MicOff className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-[11px] font-semibold text-cyan-300">
+                    Unmute Mic
+                  </span>
+                </>
+              )}
+            </button>
+            <button
+              onClick={onOpenVoiceCheatsheet}
+              className={`px-1.5 py-1 rounded-r-lg border text-xs transition-colors ${
+                isVoiceListening
+                  ? 'bg-emerald-950/50 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/80'
+                  : 'bg-neutral-900 border-cyan-500/60 text-neutral-400 hover:text-white hover:bg-neutral-800'
+              }`}
+              title="Open Voice Command Cheatsheet & Test Simulator"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
+          </div>
 
           {/* Host OS Bridge indicator */}
           <button

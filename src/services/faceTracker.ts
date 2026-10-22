@@ -7,6 +7,7 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { CalibrationData, FaceTrackingState, TrackingConfig } from '../types';
 
 export const DEFAULT_TRACKING_CONFIG: TrackingConfig = {
+  masterSensitivity: 2.2,
   sensitivityX: 2.2,
   sensitivityY: 2.2,
   smoothing: 0.35, // 0.1 = very smooth, 0.9 = fast
@@ -76,10 +77,20 @@ export class FaceTrackerService {
   private frameCount: number = 0;
   private fps: number = 0;
   private latencyMs: number = 0;
+  private backgroundTimerId: number | null = null;
 
   constructor() {
     this.smoothedCursorX = window.innerWidth / 2;
     this.smoothedCursorY = window.innerHeight / 2;
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (this.isRunning) {
+          // Immediately kickstart loop upon window minimize or restore
+          this.loop();
+        }
+      });
+    }
   }
 
   public updateConfig(newConfig: Partial<TrackingConfig>) {
@@ -246,6 +257,10 @@ export class FaceTrackerService {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    if (this.backgroundTimerId) {
+      clearTimeout(this.backgroundTimerId);
+      this.backgroundTimerId = null;
+    }
     if (this.stream) {
       this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
@@ -272,7 +287,25 @@ export class FaceTrackerService {
       this.lastFrameTime = startTime;
     }
 
-    this.animationFrameId = requestAnimationFrame(this.loop);
+    if (this.backgroundTimerId) {
+      clearTimeout(this.backgroundTimerId);
+      this.backgroundTimerId = null;
+    }
+
+    // Resilient scheduling:
+    // If the browser tab or window is minimized, Chrome suspends requestAnimationFrame callbacks.
+    // Use setTimeout so head tracking and host desktop cursor forwarding never freeze when minimized!
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.backgroundTimerId = window.setTimeout(this.loop, 16);
+    } else {
+      this.animationFrameId = requestAnimationFrame(this.loop);
+      // Backup watchdog timer: if rAF is paused (e.g. window minimized right after rAF schedule)
+      this.backgroundTimerId = window.setTimeout(() => {
+        if (this.isRunning && typeof document !== 'undefined' && document.hidden) {
+          this.loop();
+        }
+      }, 45);
+    }
   };
 
   private processVideoFrame(timestamp: number) {
@@ -350,9 +383,13 @@ export class FaceTrackerService {
             this.calibration.isCalibrated = true;
           }
 
-          // Optional: render mesh overlay on preview canvas
+          // Optional: render mesh overlay on preview canvas safely
           if (this.canvas && this.ctx && this.config.showFaceMesh) {
-            this.drawMeshPreview(landmarks, videoW, videoH, noseX, noseY);
+            try {
+              this.drawMeshPreview(landmarks, videoW, videoH, noseX, noseY);
+            } catch {
+              // Canvas may be hidden or detached during window minimize, ignore
+            }
           }
         }
       } catch (detectErr) {
@@ -441,24 +478,31 @@ export class FaceTrackerService {
       deltaY *= scale;
     }
 
-    // Apply acceleration curve
-    const signX = Math.sign(deltaX);
-    const signY = Math.sign(deltaY);
-    const acceleratedDeltaX = signX * Math.pow(Math.abs(deltaX), this.config.acceleration);
-    const acceleratedDeltaY = signY * Math.pow(Math.abs(deltaY), this.config.acceleration);
+    // Dynamic responsiveness & progressive acceleration
+    // Preserves fine micro-motion linear accuracy while boosting rapid head turns
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    const accelFactor = Math.max(1, this.config.acceleration || 1.25);
+    const accelBoostX = 1 + (accelFactor - 1) * Math.min(2.5, absX * 14);
+    const accelBoostY = 1 + (accelFactor - 1) * Math.min(2.5, absY * 14);
+    const effectiveDeltaX = deltaX * accelBoostX;
+    const effectiveDeltaY = deltaY * accelBoostY;
 
     // Compute target screen cursor position
     const screenWidth = window.innerWidth;
     const screenHeight = window.innerHeight;
 
-    // Center screen + scaled displacement
-    const targetX = screenWidth / 2 + acceleratedDeltaX * screenWidth * this.config.sensitivityX * 4;
-    const targetY = screenHeight / 2 + acceleratedDeltaY * screenHeight * this.config.sensitivityY * 4;
+    // Base multiplier: 5.5 scales normalized video delta (typically 0.02 - 0.08)
+    // so standard 2.2x sensitivity comfortably traverses modern wide displays
+    const sensX = Math.max(0.1, this.config.sensitivityX);
+    const sensY = Math.max(0.1, this.config.sensitivityY);
+    const targetX = screenWidth / 2 + effectiveDeltaX * screenWidth * sensX * 5.5;
+    const targetY = screenHeight / 2 + effectiveDeltaY * screenHeight * sensY * 5.5;
 
     // Exponential Moving Average (EMA) smoothing
     // Only update cursor position if cursor is NOT frozen!
     if (!this.config.isCursorFrozen) {
-      const alpha = Math.max(0.04, Math.min(0.9, this.config.smoothing));
+      const alpha = Math.max(0.04, Math.min(0.96, this.config.smoothing));
       this.smoothedCursorX = this.smoothedCursorX + (targetX - this.smoothedCursorX) * alpha;
       this.smoothedCursorY = this.smoothedCursorY + (targetY - this.smoothedCursorY) * alpha;
 
@@ -505,17 +549,20 @@ export class FaceTrackerService {
     noseX: number,
     noseY: number
   ) {
-    if (!this.canvas || !this.ctx) return;
-    this.canvas.width = width;
-    this.canvas.height = height;
+    if (!this.canvas || !this.ctx || !this.video) return;
+    if (width <= 0 || height <= 0) return;
 
-    this.ctx.clearRect(0, 0, width, height);
+    try {
+      if (this.canvas.width !== width) this.canvas.width = width;
+      if (this.canvas.height !== height) this.canvas.height = height;
 
-    // Draw video frame mirrored
-    this.ctx.save();
-    this.ctx.scale(-1, 1);
-    this.ctx.drawImage(this.video!, -width, 0, width, height);
-    this.ctx.restore();
+      this.ctx.clearRect(0, 0, width, height);
+
+      // Draw video frame mirrored
+      this.ctx.save();
+      this.ctx.scale(-1, 1);
+      this.ctx.drawImage(this.video, -width, 0, width, height);
+      this.ctx.restore();
 
     // Subtle dark gradient vignette for high tech look
     this.ctx.fillStyle = 'rgba(10, 15, 26, 0.25)';
@@ -590,6 +637,9 @@ export class FaceTrackerService {
     this.ctx.moveTo(rx, ry - 16);
     this.ctx.lineTo(rx, ry + 16);
     this.ctx.stroke();
+    } catch {
+      // ignore preview rendering exceptions
+    }
   }
 
   private detectCentroidFallback(video: HTMLVideoElement, width: number, height: number): { x: number; y: number } | null {
