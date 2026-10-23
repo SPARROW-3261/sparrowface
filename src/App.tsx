@@ -20,6 +20,7 @@ import { LoginPage } from './components/LoginPage';
 import { VoiceCheatsheetModal } from './components/VoiceCheatsheetModal';
 import {
   Camera,
+  CameraOff,
   Sparkles,
   MonitorCheck,
   AlertCircle,
@@ -87,6 +88,8 @@ export interface VoiceIntent {
     | 'recenter'
     | 'stop'
     | 'start'
+    | 'stop_camera'
+    | 'start_camera'
     | 'click'
     | 'right_click'
     | 'double_click'
@@ -154,6 +157,37 @@ export function parseVoiceIntent(transcript: string): VoiceIntent | null {
     };
   }
 
+  // Stop / Close Camera
+  if (
+    remainder === 'stop camera' ||
+    remainder === 'close camera' ||
+    remainder === 'turn off camera' ||
+    remainder === 'camera off' ||
+    remainder === 'kill camera'
+  ) {
+    return {
+      raw: transcript,
+      command: `Sparrow ${remainder}`,
+      action: 'stop_camera',
+      label: 'Turn Off Camera Stream & Tracking',
+    };
+  }
+
+  // Start / Open Camera
+  if (
+    remainder === 'start camera' ||
+    remainder === 'open camera' ||
+    remainder === 'turn on camera' ||
+    remainder === 'camera on'
+  ) {
+    return {
+      raw: transcript,
+      command: `Sparrow ${remainder}`,
+      action: 'start_camera',
+      label: 'Open Camera & Resume Tracking',
+    };
+  }
+
   // 2. Stop Cursor / Freeze Tracking
   if (
     remainder === 'stop' ||
@@ -164,6 +198,8 @@ export function parseVoiceIntent(transcript: string): VoiceIntent | null {
     remainder.startsWith('stop') ||
     remainder.includes('freeze cursor') ||
     remainder.includes('stop cursor') ||
+    remainder.includes('stop moving') ||
+    remainder.includes('stop moving cursor') ||
     remainder.includes('stop tracking') ||
     remainder.includes('pause cursor')
   ) {
@@ -596,11 +632,50 @@ export default function App() {
     }
   }, []);
 
-  // Attempt auto-start on mount and apply saved config
+  // Stop Camera tracking cleanly
+  const stopCamera = useCallback(() => {
+    faceTracker.stop();
+    setIsCameraStarted(false);
+    setCameraStatus('idle');
+    sounds.playClick('right');
+  }, []);
+
+  // Safe Logout: clears session, halts camera, and returns to login gate
+  const handleLogout = useCallback(() => {
+    stopCamera();
+    authService.logout();
+    setCurrentUser(null);
+  }, [stopCamera]);
+
+  // Successful safe login handler: restores user's recorded settings & presets
+  const handleLoginSuccess = useCallback((user: UserProfile) => {
+    setCurrentUser(user);
+    setIsLoginModalOpen(false);
+
+    // Retrieve saved settings & presets for this specific user
+    const saved = authService.getUserSettings(user.email || user.id);
+    if (saved?.config) {
+      const merged = { ...DEFAULT_TRACKING_CONFIG, ...saved.config };
+      setConfig(merged);
+      faceTracker.updateConfig(merged);
+    }
+    if (saved?.calibration) {
+      faceTracker.setCalibration(saved.calibration);
+    }
+
+    // Launch camera after safe authentication
+    setTimeout(() => {
+      startCamera();
+    }, 250);
+  }, [startCamera]);
+
+  // Only auto-start camera on mount IF an active user session is already present
   useEffect(() => {
     faceTracker.updateConfig(config);
-    startCamera();
-  }, [startCamera]);
+    if (currentUser) {
+      startCamera();
+    }
+  }, [currentUser, startCamera]);
 
   const handleUpdateConfig = useCallback((newConfig: Partial<TrackingConfig>) => {
     setConfig((prev) => {
@@ -611,9 +686,12 @@ export default function App() {
       } catch {
         // ignore
       }
+      if (currentUser?.email && currentUser.provider !== 'guest') {
+        authService.saveUserSettings(currentUser.email, { config: updated });
+      }
       return updated;
     });
-  }, []);
+  }, [currentUser]);
 
   const handleRecenter = useCallback(() => {
     faceTracker.recenter(trackingState.rawNoseX, trackingState.rawNoseY);
@@ -635,7 +713,10 @@ export default function App() {
   const handleSaveCalibration = useCallback((data: Partial<CalibrationData>) => {
     faceTracker.setCalibration(data);
     setIsCalibrating(false);
-  }, []);
+    if (currentUser?.email && currentUser.provider !== 'guest') {
+      authService.saveUserSettings(currentUser.email, { calibration: data });
+    }
+  }, [currentUser]);
 
   // Dispatch virtual DOM click at coordinate with deep interactive button targeting
   const simulateVirtualClick = useCallback((x: number, y: number, button: 'left' | 'right' = 'left') => {
@@ -950,6 +1031,14 @@ export default function App() {
           handleUnmuteVoice();
           break;
 
+        case 'stop_camera':
+          stopCamera();
+          break;
+
+        case 'start_camera':
+          startCamera();
+          break;
+
         case 'help':
           setIsVoiceModalOpen(true);
           break;
@@ -962,6 +1051,7 @@ export default function App() {
       trackingState.cursorY,
       isCameraStarted,
       startCamera,
+      stopCamera,
       simulateVirtualClick,
       handleMuteVoice,
       handleUnmuteVoice,
@@ -1053,101 +1143,176 @@ export default function App() {
         }}
       />
 
-      {/* Main Sparrow Interactive Desktop Workspace */}
-      <InteractiveDesktop
-        trackingState={trackingState}
-        config={config}
-        nativeStatus={nativeStatus}
-        currentUser={currentUser}
-        onOpenLogin={() => setIsLoginModalOpen(true)}
-        onUpdateConfig={handleUpdateConfig}
-        onRecenter={handleRecenter}
-        onToggleCursorFreeze={handleToggleCursorFreeze}
-        onStartCalibration={() => setIsCalibrating(true)}
-        onOpenNativeBridge={() => setIsNativeModalOpen(true)}
-        isVoiceListening={isVoiceListening}
-        voiceTranscript={voiceTranscript}
-        lastVoiceAction={voiceToast}
-        voiceError={voiceError}
-        isSpeechSupported={isSpeechSupported}
-        onToggleVoice={handleToggleVoice}
-        onOpenVoiceCheatsheet={() => setIsVoiceModalOpen(true)}
-        requestedAppOpen={requestedAppOpen}
-      />
-
-      {/* Virtual Cursor Layer */}
-      <VirtualCursor
-        x={trackingState.cursorX}
-        y={trackingState.cursorY}
-        isTracking={isCameraStarted && trackingState.hasFace}
-        isDragging={trackingState.isDragging}
-        isCursorFrozen={config.isCursorFrozen}
-        activeGesture={trackingState.activeGesture}
-        config={config}
-        onPerformClick={handlePerformClick}
-      />
-
-      {/* Webcam HUD Widget (Picture-in-Picture) */}
-      {isCameraStarted && config.showWebcamFeed && (
-        <WebcamTrackerHUD
-          trackingState={trackingState}
-          onRecenter={handleRecenter}
-          onToggleCursorFreeze={handleToggleCursorFreeze}
-          showMesh={config.showFaceMesh}
+      {/* If no user session, render LoginPage first as the mandatory initial authentication gate */}
+      {!currentUser ? (
+        <LoginPage
+          isModal={false}
+          onSuccess={handleLoginSuccess}
         />
+      ) : (
+        <>
+          {/* Main Sparrow Interactive Desktop Workspace */}
+          <InteractiveDesktop
+            trackingState={trackingState}
+            config={config}
+            nativeStatus={nativeStatus}
+            currentUser={currentUser}
+            onOpenLogin={() => setIsLoginModalOpen(true)}
+            onLogout={handleLogout}
+            onUpdateConfig={handleUpdateConfig}
+            onRecenter={handleRecenter}
+            onToggleCursorFreeze={handleToggleCursorFreeze}
+            onStartCalibration={() => setIsCalibrating(true)}
+            onOpenNativeBridge={() => setIsNativeModalOpen(true)}
+            isCameraStarted={isCameraStarted}
+            onStartCamera={startCamera}
+            onStopCamera={stopCamera}
+            isVoiceListening={isVoiceListening}
+            voiceTranscript={voiceTranscript}
+            lastVoiceAction={voiceToast}
+            voiceError={voiceError}
+            isSpeechSupported={isSpeechSupported}
+            onToggleVoice={handleToggleVoice}
+            onOpenVoiceCheatsheet={() => setIsVoiceModalOpen(true)}
+            requestedAppOpen={requestedAppOpen}
+          />
+
+          {/* Virtual Cursor Layer */}
+          <VirtualCursor
+            x={trackingState.cursorX}
+            y={trackingState.cursorY}
+            isTracking={isCameraStarted && trackingState.hasFace}
+            isDragging={trackingState.isDragging}
+            isCursorFrozen={config.isCursorFrozen}
+            activeGesture={trackingState.activeGesture}
+            config={config}
+            onPerformClick={handlePerformClick}
+          />
+
+          {/* Webcam HUD Widget (Picture-in-Picture) */}
+          {config.showWebcamFeed && (
+            <WebcamTrackerHUD
+              trackingState={trackingState}
+              onRecenter={handleRecenter}
+              onToggleCursorFreeze={handleToggleCursorFreeze}
+              showMesh={config.showFaceMesh}
+              isCameraStarted={isCameraStarted}
+              onStopCamera={stopCamera}
+              onStartCamera={startCamera}
+            />
+          )}
+
+          {/* Floating Top Quick Controls Bar for Camera & Moving Cursor */}
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 hidden sm:flex items-center gap-2 bg-neutral-900/90 border border-neutral-800 rounded-xl p-1.5 px-3 shadow-xl backdrop-blur-md text-xs">
+            {isCameraStarted ? (
+              <button
+                onClick={stopCamera}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-700/60 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                title="Stop / Close Webcam Camera"
+              >
+                <CameraOff className="w-3.5 h-3.5 text-rose-400" />
+                <span>Stop Camera</span>
+              </button>
+            ) : (
+              <button
+                onClick={startCamera}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm animate-pulse"
+                title="Start / Open Webcam Camera"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Start Camera</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleToggleCursorFreeze}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors border shadow-sm ${
+                config.isCursorFrozen
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400 animate-pulse'
+                  : 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-700/60'
+              }`}
+              title={config.isCursorFrozen ? 'Resume Moving Cursor (Press P)' : 'Stop Moving Cursor & Freeze (Press P)'}
+            >
+              {config.isCursorFrozen ? (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current text-white" />
+                  <span>Move Cursor</span>
+                </>
+              ) : (
+                <>
+                  <Pause className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Stop Moving Cursor</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                sounds.playRecenter();
+                handleRecenter();
+              }}
+              className="p-1.5 text-cyan-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors"
+              title="Recenter Head Resting Center"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </>
       )}
 
       {/* Floating Voice Indicator HUD (Top Right) */}
-      <div className="fixed top-4 right-4 z-40 hidden sm:flex items-center gap-2 bg-neutral-900/90 border border-neutral-800 hover:border-cyan-500/40 rounded-xl p-1.5 pl-3 shadow-xl backdrop-blur-md text-xs transition-colors">
-        {isVoiceListening ? (
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-            </span>
-            <span className="text-neutral-300 text-[11px] font-medium">
-              {voiceTranscript ? (
-                <span className="text-cyan-300 font-mono">"{voiceTranscript}"</span>
-              ) : (
-                <span>
-                  Listening: say <strong className="text-cyan-400">"Sparrow ..."</strong>
-                </span>
-              )}
-            </span>
-            <button
-              onClick={handleToggleVoice}
-              className="p-1.5 rounded-lg text-xs text-emerald-400 hover:bg-emerald-950/60 transition-colors"
-              title="Click to Mute Voice Recognition"
-            >
-              <Mic className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500/80" />
-            <span className="text-neutral-400 text-[11px]">Voice Muted</span>
-            <button
-              onClick={handleToggleVoice}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg text-xs font-semibold shadow-md active:scale-95 transition-all animate-pulse"
-              title="Click to Unmute Microphone & Start Voice Commands"
-            >
-              <Mic className="w-3.5 h-3.5" />
-              <span>Unmute</span>
-            </button>
-          </div>
-        )}
+      {currentUser && (
+        <div className="fixed top-4 right-4 z-40 hidden sm:flex items-center gap-2 bg-neutral-900/90 border border-neutral-800 hover:border-cyan-500/40 rounded-xl p-1.5 pl-3 shadow-xl backdrop-blur-md text-xs transition-colors">
+          {isVoiceListening ? (
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              </span>
+              <span className="text-neutral-300 text-[11px] font-medium">
+                {voiceTranscript ? (
+                  <span className="text-cyan-300 font-mono">"{voiceTranscript}"</span>
+                ) : (
+                  <span>
+                    Listening: say <strong className="text-cyan-400">"Sparrow ..."</strong>
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={handleToggleVoice}
+                className="p-1.5 rounded-lg text-xs text-emerald-400 hover:bg-emerald-950/60 transition-colors"
+                title="Click to Mute Voice Recognition"
+              >
+                <Mic className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500/80" />
+              <span className="text-neutral-400 text-[11px]">Voice Muted</span>
+              <button
+                onClick={handleToggleVoice}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg text-xs font-semibold shadow-md active:scale-95 transition-all animate-pulse"
+                title="Click to Unmute Microphone & Start Voice Commands"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Unmute</span>
+              </button>
+            </div>
+          )}
 
-        <button
-          onClick={() => setIsVoiceModalOpen(true)}
-          className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg text-[10px] font-medium transition-colors"
-          title="Open Voice Commands Reference & Test Simulator"
-        >
-          Commands
-        </button>
-      </div>
+          <button
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white rounded-lg text-[10px] font-medium transition-colors"
+            title="Open Voice Commands Reference & Test Simulator"
+          >
+            Commands
+          </button>
+        </div>
+      )}
 
       {/* Speech-to-Intent Recognized Toast HUD (Top Center) */}
-      {voiceToast && (
+      {currentUser && voiceToast && (
         <div
           className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-xl border flex items-center justify-between gap-3 text-xs animate-in slide-in-from-top-4 duration-200 ${
             voiceToast.action === 'stop'
@@ -1182,7 +1347,7 @@ export default function App() {
       )}
 
       {/* Top Floating Camera Status / Activation Bar if not yet active */}
-      {!isCameraStarted && !voiceToast && (
+      {currentUser && !isCameraStarted && !voiceToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-lg w-[92%] bg-neutral-900/95 border border-cyan-500/40 rounded-xl p-3 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-8 h-8 rounded-lg overflow-hidden border border-cyan-500/40 shrink-0 shadow-sm">

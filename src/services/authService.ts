@@ -5,6 +5,8 @@
  * environment lighting conditions and seating ergonomics.
  */
 
+import { TrackingConfig, CalibrationData } from '../types';
+
 export type EnvironmentLighting = 'daylight' | 'dim_night' | 'office' | 'backlit';
 export type SeatingPosition = 'desk_upright' | 'standing' | 'reclined_bed' | 'wheelchair' | 'custom';
 
@@ -125,13 +127,82 @@ export const DEFAULT_PRESETS: TrackingPreset[] = [
 const STORAGE_KEY = 'aeroface_user_session';
 const REGISTERED_USERS_KEY = 'aeroface_registered_accounts';
 
+export interface RegisteredAccountRecord {
+  id: string;
+  name: string;
+  email: string;
+  pass?: string;
+  passHash?: string;
+  avatarUrl?: string;
+  provider?: 'password' | 'google' | 'guest';
+  createdAt: string;
+  config?: Partial<TrackingConfig>;
+  presets?: TrackingPreset[];
+  activePresetId?: string;
+  calibration?: Partial<CalibrationData>;
+  preferences?: {
+    cursorStyle?: string;
+    soundFeedback?: boolean;
+  };
+}
+
+export const DEFAULT_ACCOUNTS_SEED: Record<string, RegisteredAccountRecord> = {
+  'harshvardhan32613261@gmail.com': {
+    id: 'usr_harsh_vardhan',
+    name: 'Harsh Vardhan',
+    email: 'harshvardhan32613261@gmail.com',
+    pass: 'sparrow123',
+    passHash: '5e0f9b2a',
+    avatarUrl: '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    provider: 'password',
+    presets: DEFAULT_PRESETS,
+    activePresetId: DEFAULT_PRESETS[0].id,
+  },
+};
+
 class AuthService {
   private currentUser: UserProfile | null = null;
   private listeners: ((user: UserProfile | null) => void)[] = [];
   private presetChangeListeners: ((preset: TrackingPreset) => void)[] = [];
 
   constructor() {
+    this.initRegisteredAccounts();
     this.loadSession();
+  }
+
+  public hashPassword(pass: string): string {
+    let hash = 0x811c9dc5;
+    const salted = `sparrow_auth_v1_${pass}`;
+    for (let i = 0; i < salted.length; i++) {
+      hash ^= salted.charCodeAt(i);
+      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
+  private initRegisteredAccounts() {
+    try {
+      const existingRaw = localStorage.getItem(REGISTERED_USERS_KEY);
+      if (!existingRaw) {
+        localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(DEFAULT_ACCOUNTS_SEED));
+      } else {
+        // Safe merge without overwriting existing registered accounts
+        const existing: Record<string, RegisteredAccountRecord> = JSON.parse(existingRaw);
+        let changed = false;
+        for (const [key, seed] of Object.entries(DEFAULT_ACCOUNTS_SEED)) {
+          if (!existing[key]) {
+            existing[key] = seed;
+            changed = true;
+          }
+        }
+        if (changed) {
+          localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(existing));
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   private ensurePresets(user: Partial<UserProfile>): UserProfile {
@@ -145,11 +216,11 @@ class AuthService {
         : presets[0]?.id || DEFAULT_PRESETS[0].id;
 
     return {
-      id: user.id || 'usr_default',
-      name: user.name || 'Harsh Vardhan',
-      email: user.email || 'harshvardhan32613261@gmail.com',
+      id: user.id || `usr_${Date.now()}`,
+      name: user.name || 'User',
+      email: user.email || 'user@sparrow.local',
       avatarUrl: user.avatarUrl || '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg',
-      provider: user.provider || 'google',
+      provider: user.provider || 'password',
       createdAt: user.createdAt || new Date().toISOString(),
       activePresetId,
       presets,
@@ -162,26 +233,89 @@ class AuthService {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        this.currentUser = this.ensurePresets(parsed);
+        // Ensure legacy default auto-logins are cleared so user logs in safely
+        if (parsed?.id === 'user_default' || !parsed?.email || parsed?.email === 'user_default@sparrow.local') {
+          localStorage.removeItem(STORAGE_KEY);
+          this.currentUser = null;
+        } else {
+          this.currentUser = this.ensurePresets(parsed);
+        }
       } else {
-        // Default Google user with user's uploaded portrait avatar
-        this.currentUser = this.ensurePresets({
-          id: 'user_default',
-          name: 'Harsh Vardhan',
-          email: 'harshvardhan32613261@gmail.com',
-          avatarUrl: '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg',
-          provider: 'google',
-          createdAt: new Date().toISOString(),
-        });
+        // Enforce safe login gate on startup - no auto-logged-in default user!
+        this.currentUser = null;
       }
     } catch {
-      this.currentUser = this.ensurePresets({
-        id: 'user_fallback',
-        name: 'Guest User',
-        email: 'guest@sparrow.local',
-        avatarUrl: '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg',
-        provider: 'guest',
-      });
+      this.currentUser = null;
+    }
+  }
+
+  public getUserSettings(userKey?: string): {
+    config?: Partial<TrackingConfig>;
+    calibration?: Partial<CalibrationData>;
+    presets?: TrackingPreset[];
+    activePresetId?: string;
+  } | null {
+    const key = (userKey || this.currentUser?.email || this.currentUser?.id || '').toLowerCase().trim();
+    if (!key) return null;
+    try {
+      const saved = localStorage.getItem(`aeroface_user_data_${key}`);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      if (accountsJson) {
+        const accounts = JSON.parse(accountsJson);
+        if (accounts[key]) {
+          return {
+            config: accounts[key].config,
+            presets: accounts[key].presets,
+            activePresetId: accounts[key].activePresetId,
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  public saveUserSettings(
+    userKey: string | undefined,
+    data: {
+      config?: Partial<TrackingConfig>;
+      calibration?: Partial<CalibrationData>;
+      presets?: TrackingPreset[];
+      activePresetId?: string;
+    }
+  ) {
+    const key = (userKey || this.currentUser?.email || this.currentUser?.id || '').toLowerCase().trim();
+    if (!key) return;
+    try {
+      const existing = this.getUserSettings(key) || {};
+      const merged = {
+        ...existing,
+        ...data,
+        config: { ...existing.config, ...data.config },
+        calibration: { ...existing.calibration, ...data.calibration },
+      };
+      if (data.presets) merged.presets = data.presets;
+      if (data.activePresetId) merged.activePresetId = data.activePresetId;
+
+      localStorage.setItem(`aeroface_user_data_${key}`, JSON.stringify(merged));
+
+      // Also persist back to REGISTERED_USERS_KEY
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      if (accountsJson) {
+        const accounts = JSON.parse(accountsJson);
+        if (accounts[key]) {
+          accounts[key].config = merged.config;
+          if (merged.presets) accounts[key].presets = merged.presets;
+          if (merged.activePresetId) accounts[key].activePresetId = merged.activePresetId;
+          localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+        }
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -205,6 +339,12 @@ class AuthService {
   private notify() {
     if (this.currentUser) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.currentUser));
+      if (this.currentUser.email) {
+        this.saveUserSettings(this.currentUser.email, {
+          presets: this.currentUser.presets,
+          activePresetId: this.currentUser.activePresetId,
+        });
+      }
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -347,25 +487,62 @@ class AuthService {
   }
 
   public async loginWithEmail(email: string, pass: string): Promise<UserProfile> {
-    const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
-    const accounts: Record<string, { name: string; email: string; pass: string }> = accountsJson
-      ? JSON.parse(accountsJson)
-      : {};
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !pass) {
+      throw new Error('Please enter both your email address and password.');
+    }
 
-    const userEntry = accounts[email.toLowerCase()];
-    if (userEntry && userEntry.pass !== pass) {
+    let accounts: Record<string, RegisteredAccountRecord> = {};
+    try {
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      accounts = accountsJson ? JSON.parse(accountsJson) : {};
+    } catch {
+      accounts = {};
+    }
+
+    const userEntry = accounts[normalizedEmail];
+    if (!userEntry) {
+      // Reject login if account does not exist; never create a new account on login
+      throw new Error('Account not found. Please register first.');
+    }
+
+    const hashedInput = this.hashPassword(pass);
+    const isPasswordValid =
+      (userEntry.passHash && userEntry.passHash === hashedInput) ||
+      (userEntry.pass && userEntry.pass === pass);
+
+    if (!isPasswordValid) {
       throw new Error('Incorrect password. Please check your credentials.');
     }
 
-    const name = userEntry ? userEntry.name : email.split('@')[0];
-    const user = this.ensurePresets({
-      id: `usr_${Date.now()}`,
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      email: email.toLowerCase(),
-      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+    // Preserve existing profile information, stable ID, and user settings
+    const stableId = userEntry.id || `usr_${normalizedEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const savedData = this.getUserSettings(normalizedEmail);
+
+    const user: UserProfile = {
+      id: stableId,
+      name: userEntry.name,
+      email: normalizedEmail,
+      avatarUrl:
+        userEntry.avatarUrl ||
+        `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userEntry.name)}`,
       provider: 'password',
-      createdAt: new Date().toISOString(),
-    });
+      createdAt: userEntry.createdAt || new Date().toISOString(),
+      activePresetId: savedData?.activePresetId || userEntry.activePresetId || DEFAULT_PRESETS[0].id,
+      presets: savedData?.presets || userEntry.presets || JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
+      preferences: userEntry.preferences,
+    };
+
+    // Auto-migrate plaintext password to passHash if needed
+    if (!userEntry.passHash) {
+      userEntry.passHash = hashedInput;
+      accounts[normalizedEmail] = userEntry;
+      try {
+        localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+      } catch {
+        // ignore
+      }
+    }
 
     this.currentUser = user;
     this.notify();
@@ -375,34 +552,65 @@ class AuthService {
   }
 
   public async registerWithEmail(name: string, email: string, pass: string): Promise<UserProfile> {
-    if (!name.trim() || !email.trim() || !pass) {
-      throw new Error('All registration fields are required.');
+    const cleanName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!cleanName) {
+      throw new Error('Please enter your full name.');
     }
-    if (pass.length < 6) {
+    if (!normalizedEmail || !normalizedEmail.includes('@') || !normalizedEmail.includes('.')) {
+      throw new Error('Please enter a valid email address.');
+    }
+    if (!pass || pass.length < 6) {
       throw new Error('Password must be at least 6 characters long.');
     }
 
-    const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
-    const accounts: Record<string, { name: string; email: string; pass: string }> = accountsJson
-      ? JSON.parse(accountsJson)
-      : {};
+    let accounts: Record<string, RegisteredAccountRecord> = {};
+    try {
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      accounts = accountsJson ? JSON.parse(accountsJson) : {};
+    } catch {
+      accounts = {};
+    }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    accounts[normalizedEmail] = {
-      name: name.trim(),
-      email: normalizedEmail,
-      pass,
-    };
-    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+    // Prevent duplicate registration; do not overwrite existing accounts
+    if (accounts[normalizedEmail]) {
+      throw new Error('This email is already registered. Please log in instead.');
+    }
 
-    const user = this.ensurePresets({
-      id: `usr_${Date.now()}`,
-      name: name.trim(),
+    const stableId = `usr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const hashed = this.hashPassword(pass);
+    const now = new Date().toISOString();
+
+    const newAccount: RegisteredAccountRecord = {
+      id: stableId,
+      name: cleanName,
       email: normalizedEmail,
-      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name.trim())}`,
+      passHash: hashed,
+      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`,
       provider: 'password',
-      createdAt: new Date().toISOString(),
-    });
+      createdAt: now,
+      presets: JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
+      activePresetId: DEFAULT_PRESETS[0].id,
+    };
+
+    accounts[normalizedEmail] = newAccount;
+    try {
+      localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+    } catch (err) {
+      console.warn('Failed to save to localStorage:', err);
+    }
+
+    const user: UserProfile = {
+      id: stableId,
+      name: cleanName,
+      email: normalizedEmail,
+      avatarUrl: newAccount.avatarUrl!,
+      provider: 'password',
+      createdAt: now,
+      activePresetId: DEFAULT_PRESETS[0].id,
+      presets: newAccount.presets!,
+    };
 
     this.currentUser = user;
     this.notify();
@@ -411,28 +619,11 @@ class AuthService {
     return user;
   }
 
-  public async loginWithGoogle(hintEmail?: string): Promise<UserProfile> {
-    const email = hintEmail || 'harshvardhan32613261@gmail.com';
-    const namePart = email.split('@')[0].replace(/[0-9]/g, '');
-    const cleanName = namePart ? namePart.charAt(0).toUpperCase() + namePart.slice(1) : 'Google User';
-
-    const isHarsh = email.toLowerCase().includes('harsh');
-    const user = this.ensurePresets({
-      id: `google_${Date.now()}`,
-      name: cleanName === 'Harshvardhan' ? 'Harsh Vardhan' : cleanName,
-      email: email,
-      avatarUrl: isHarsh
-        ? '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg'
-        : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
-      provider: 'google',
-      createdAt: new Date().toISOString(),
-    });
-
-    this.currentUser = user;
-    this.notify();
-    const active = this.getActivePreset();
-    if (active) this.notifyPresetChange(active);
-    return user;
+  public async loginWithGoogle(): Promise<UserProfile> {
+    // Real Google OAuth is not configured in this applet environment.
+    throw new Error(
+      'Google OAuth is not configured for this application domain. Please log in with your email and password, or continue as Guest.'
+    );
   }
 
   public continueAsGuest(): UserProfile {

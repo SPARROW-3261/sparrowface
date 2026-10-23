@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { FaceTrackingState } from '../types';
-import { Camera, Minimize2, Maximize2, Sparkles, RefreshCw, Eye, Smile, Play, Pause } from 'lucide-react';
+import { Camera, CameraOff, Minimize2, Maximize2, Sparkles, RefreshCw, Eye, Smile, Play, Pause, X } from 'lucide-react';
 import { sounds } from '../services/soundEffects';
 import { faceTracker } from '../services/faceTracker';
 
@@ -14,6 +14,9 @@ interface WebcamTrackerHUDProps {
   onRecenter: () => void;
   onToggleCursorFreeze?: () => void;
   showMesh: boolean;
+  isCameraStarted?: boolean;
+  onStopCamera?: () => void;
+  onStartCamera?: () => void;
 }
 
 export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
@@ -21,6 +24,9 @@ export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
   onRecenter,
   onToggleCursorFreeze,
   showMesh,
+  isCameraStarted = true,
+  onStopCamera,
+  onStartCamera,
 }) => {
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const hudVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -67,9 +73,27 @@ export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
                   ? 'text-amber-400 hover:text-amber-300 bg-amber-950/60'
                   : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
               }`}
-              title={trackingState.isCursorFrozen ? 'Move Cursor (P)' : 'Stop Cursor (P)'}
+              title={trackingState.isCursorFrozen ? 'Resume Moving Cursor (P)' : 'Stop Moving Cursor (P)'}
             >
-              {trackingState.isCursorFrozen ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
+              {trackingState.isCursorFrozen ? <Play className="w-3.5 h-3.5 fill-current text-white" /> : <Pause className="w-3.5 h-3.5 text-amber-400" />}
+            </button>
+          )}
+          {isCameraStarted && onStopCamera && (
+            <button
+              onClick={onStopCamera}
+              className="p-1 rounded text-rose-400 hover:text-white hover:bg-rose-950/80 transition-colors"
+              title="Close & Stop Camera Stream"
+            >
+              <CameraOff className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {!isCameraStarted && onStartCamera && (
+            <button
+              onClick={onStartCamera}
+              className="p-1 rounded text-cyan-400 hover:text-white hover:bg-cyan-950/80 transition-colors animate-pulse"
+              title="Start & Open Camera Stream"
+            >
+              <Camera className="w-3.5 h-3.5" />
             </button>
           )}
           <button
@@ -178,6 +202,53 @@ export const WebcamTrackerHUD: React.FC<WebcamTrackerHUDProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Quick Action Controls: Stop Moving Cursor & Stop Camera */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            {onToggleCursorFreeze && (
+              <button
+                onClick={onToggleCursorFreeze}
+                className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border shadow-sm ${
+                  trackingState.isCursorFrozen
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400 animate-pulse'
+                    : 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-600/70'
+                }`}
+                title={trackingState.isCursorFrozen ? 'Resume Moving Cursor' : 'Stop Moving Cursor (Freeze)'}
+              >
+                {trackingState.isCursorFrozen ? (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current text-white" />
+                    <span>Move Cursor</span>
+                  </>
+                ) : (
+                  <>
+                    <Pause className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Stop Cursor</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {isCameraStarted && onStopCamera ? (
+              <button
+                onClick={onStopCamera}
+                className="py-1.5 px-2 bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-600/70 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                title="Turn Off Webcam & Stop Tracking"
+              >
+                <CameraOff className="w-3.5 h-3.5 text-rose-400" />
+                <span>Stop Camera</span>
+              </button>
+            ) : onStartCamera ? (
+              <button
+                onClick={onStartCamera}
+                className="py-1.5 px-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm animate-pulse"
+                title="Turn On Webcam & Start Tracking"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Start Camera</span>
+              </button>
+            ) : null}
           </div>
 
           {/* Quick Recenter CTA */}

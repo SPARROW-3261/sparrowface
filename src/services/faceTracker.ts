@@ -268,6 +268,31 @@ export class FaceTrackerService {
     if (this.video) {
       this.video.srcObject = null;
     }
+    const stoppedState: FaceTrackingState = {
+      hasFace: false,
+      isTrackingActive: false,
+      isCursorFrozen: this.config.isCursorFrozen,
+      rawNoseX: 0.5,
+      rawNoseY: 0.5,
+      deltaX: 0,
+      deltaY: 0,
+      cursorX: this.smoothedCursorX,
+      cursorY: this.smoothedCursorY,
+      pitch: 0,
+      yaw: 0,
+      roll: 0,
+      leftEyeOpenRatio: 0.3,
+      rightEyeOpenRatio: 0.3,
+      mouthOpenRatio: 0.1,
+      isBlinkingLeft: false,
+      isBlinkingRight: false,
+      isMouthOpen: false,
+      isDragging: false,
+      fps: 0,
+      latencyMs: 0,
+      activeGesture: null,
+    };
+    this.listeners.forEach((listener) => listener(stoppedState, this.canvas || undefined));
   }
 
   private loop = () => {

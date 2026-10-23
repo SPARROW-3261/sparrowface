@@ -19,6 +19,10 @@ import {
   Info,
   CheckCircle2,
   AlertTriangle,
+  Camera,
+  CameraOff,
+  Play,
+  Pause,
 } from 'lucide-react';
 
 interface CameraVisionAppProps {
@@ -26,6 +30,11 @@ interface CameraVisionAppProps {
   onRecenter: () => void;
   showMesh: boolean;
   onToggleMesh: () => void;
+  isCameraStarted?: boolean;
+  onStartCamera?: () => void;
+  onStopCamera?: () => void;
+  onToggleCursorFreeze?: () => void;
+  isCursorFrozen?: boolean;
 }
 
 interface MotionSample {
@@ -45,6 +54,11 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
   onRecenter,
   showMesh,
   onToggleMesh,
+  isCameraStarted = true,
+  onStartCamera,
+  onStopCamera,
+  onToggleCursorFreeze,
+  isCursorFrozen = false,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -512,14 +526,60 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
             <span>Reset</span>
           </button>
 
+          {/* Stop Moving Cursor Toggle Button */}
+          {onToggleCursorFreeze && (
+            <button
+              onClick={onToggleCursorFreeze}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border shadow-sm ${
+                isCursorFrozen
+                  ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400 animate-pulse'
+                  : 'bg-amber-950/70 hover:bg-amber-900 text-amber-200 border-amber-700/60'
+              }`}
+              title={isCursorFrozen ? 'Resume Moving Cursor (Press P)' : 'Stop Moving Cursor & Freeze (Press P)'}
+            >
+              {isCursorFrozen ? (
+                <>
+                  <Play className="w-3.5 h-3.5 fill-current text-white" />
+                  <span>Move Cursor</span>
+                </>
+              ) : (
+                <>
+                  <Pause className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Stop Moving Cursor</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Stop / Start Camera Button */}
+          {isCameraStarted && onStopCamera ? (
+            <button
+              onClick={onStopCamera}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-600/70 rounded text-xs font-semibold transition-colors shadow-sm"
+              title="Stop Webcam Stream & Face Tracking"
+            >
+              <CameraOff className="w-3.5 h-3.5 text-rose-400" />
+              <span>Stop Camera</span>
+            </button>
+          ) : onStartCamera ? (
+            <button
+              onClick={onStartCamera}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-semibold transition-colors shadow-sm animate-pulse"
+              title="Start Webcam Stream & Face Tracking"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Start Camera</span>
+            </button>
+          ) : null}
+
           <button
             onClick={() => {
               sounds.playRecenter();
               onRecenter();
             }}
-            className="flex items-center gap-1.5 px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded text-xs transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded text-xs transition-colors shadow-sm"
           >
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             <span>Recenter</span>
           </button>
         </div>
@@ -527,6 +587,28 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
 
       {/* Main Video Viewport with Live Motion Heatmap Overlay */}
       <div className="relative aspect-video max-h-[320px] w-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-xl mb-4 flex items-center justify-center">
+        {/* Stopped Camera Overlay */}
+        {!isCameraStarted && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-neutral-950/95 text-center p-4 backdrop-blur-sm">
+            <div className="w-12 h-12 rounded-2xl bg-rose-950/80 border border-rose-800/80 flex items-center justify-center text-rose-400 mb-2 shadow-lg">
+              <CameraOff className="w-6 h-6" />
+            </div>
+            <div className="text-sm font-bold text-white mb-1">Camera Stream is Stopped</div>
+            <div className="text-xs text-neutral-400 mb-3 max-w-xs">
+              Webcam video hardware is released. Click the button below to turn the camera back on.
+            </div>
+            {onStartCamera && (
+              <button
+                onClick={onStartCamera}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-cyan-900/40 cursor-pointer active:scale-95 transition-all"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Start Camera</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Live video */}
         <video
           ref={localVideoRef}

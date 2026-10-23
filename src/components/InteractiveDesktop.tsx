@@ -34,6 +34,7 @@ import {
   Volume2,
   VolumeX,
   Camera,
+  CameraOff,
   Maximize2,
   LayoutGrid,
   Play,
@@ -53,11 +54,15 @@ interface InteractiveDesktopProps {
   nativeStatus: NativeBridgeStatus;
   currentUser?: UserProfile | null;
   onOpenLogin?: () => void;
+  onLogout?: () => void;
   onUpdateConfig: (newConfig: Partial<TrackingConfig>) => void;
   onRecenter: () => void;
   onToggleCursorFreeze: () => void;
   onStartCalibration: () => void;
   onOpenNativeBridge: () => void;
+  isCameraStarted?: boolean;
+  onStartCamera?: () => void;
+  onStopCamera?: () => void;
   isVoiceListening?: boolean;
   voiceTranscript?: string;
   lastVoiceAction?: { command: string; label: string; timestamp: number } | null;
@@ -207,11 +212,15 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
   nativeStatus,
   currentUser,
   onOpenLogin,
+  onLogout,
   onUpdateConfig,
   onRecenter,
   onToggleCursorFreeze,
   onStartCalibration,
   onOpenNativeBridge,
+  isCameraStarted = true,
+  onStartCamera,
+  onStopCamera,
   isVoiceListening = false,
   voiceTranscript = '',
   lastVoiceAction = null,
@@ -523,6 +532,11 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
                       onRecenter={onRecenter}
                       showMesh={config.showFaceMesh}
                       onToggleMesh={() => onUpdateConfig({ showFaceMesh: !config.showFaceMesh })}
+                      isCameraStarted={isCameraStarted}
+                      onStartCamera={onStartCamera}
+                      onStopCamera={onStopCamera}
+                      onToggleCursorFreeze={onToggleCursorFreeze}
+                      isCursorFrozen={config.isCursorFrozen}
                     />
                   )}
                   {win.id === 'target_practice' && <TargetPracticeApp />}
@@ -605,16 +619,30 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={() => {
-                setStartMenuOpen(false);
-                if (onOpenLogin) onOpenLogin();
-              }}
-              className="px-2 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-[10px] text-cyan-300 font-medium transition-colors shrink-0"
-              title="Account & Login"
-            >
-              {currentUser && currentUser.provider !== 'guest' ? 'Switch' : 'Sign In'}
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => {
+                  setStartMenuOpen(false);
+                  if (onOpenLogin) onOpenLogin();
+                }}
+                className="px-2 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-[10px] text-cyan-300 font-medium transition-colors"
+                title="Account & Login"
+              >
+                {currentUser && currentUser.provider !== 'guest' ? 'Switch' : 'Sign In'}
+              </button>
+              {currentUser && onLogout && (
+                <button
+                  onClick={() => {
+                    setStartMenuOpen(false);
+                    onLogout();
+                  }}
+                  className="p-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white transition-colors"
+                  title="Sign Out / Lock Screen"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1 mb-3">
@@ -742,16 +770,41 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
         </div>
 
         {/* Right: System Tray & Quick Actions */}
-        <div className="flex items-center gap-2.5 text-xs">
-          {/* Stop / Move Cursor Toggle Button */}
+        <div className="flex items-center gap-2 text-xs">
+          {/* Stop / Start Camera Button */}
+          {onStopCamera && onStartCamera && (
+            <button
+              onClick={isCameraStarted ? onStopCamera : onStartCamera}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold text-xs transition-all shadow-sm ${
+                isCameraStarted
+                  ? 'bg-rose-950/80 hover:bg-rose-900 border border-rose-600/70 text-rose-300 hover:text-white'
+                  : 'bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-500/70 text-cyan-300 hover:text-white animate-pulse'
+              }`}
+              title={isCameraStarted ? 'Close / Stop Webcam Camera Stream' : 'Open / Start Webcam Camera Stream'}
+            >
+              {isCameraStarted ? (
+                <>
+                  <CameraOff className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Stop Camera</span>
+                </>
+              ) : (
+                <>
+                  <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Start Camera</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Stop Moving Cursor / Move Cursor Toggle Button */}
           <button
             onClick={onToggleCursorFreeze}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium text-xs transition-all shadow-sm ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold text-xs transition-all shadow-sm ${
               config.isCursorFrozen
                 ? 'bg-amber-600 hover:bg-amber-500 text-white ring-2 ring-amber-400/50 animate-pulse'
-                : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700'
+                : 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border border-amber-600/70'
             }`}
-            title={config.isCursorFrozen ? 'Resume Cursor Movement (P)' : 'Stop Cursor Movement (P)'}
+            title={config.isCursorFrozen ? 'Resume Moving Cursor (Press P)' : 'Stop Moving Cursor & Freeze (Press P)'}
           >
             {config.isCursorFrozen ? (
               <>
@@ -760,8 +813,8 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               </>
             ) : (
               <>
-                <Pause className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Stop Cursor</span>
+                <Pause className="w-3.5 h-3.5 text-amber-400" />
+                <span>Stop Moving Cursor</span>
               </>
             )}
             <kbd className="hidden lg:inline px-1 py-0.2 bg-neutral-950/70 rounded font-mono text-[10px] text-neutral-300">

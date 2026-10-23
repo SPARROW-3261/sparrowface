@@ -41,6 +41,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setError(null);
     if (!email.trim() || !password) {
       setError('Please provide both your email address and password.');
@@ -66,6 +67,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setError(null);
 
     if (!name.trim()) {
@@ -103,25 +105,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
   };
 
   const handleGoogleSignIn = async () => {
+    if (isLoading) return;
     setError(null);
     setIsLoading(true);
     sounds.playClick('left');
     try {
-      const user = await authService.loginWithGoogle(email.includes('@gmail.com') ? email : undefined);
+      const user = await authService.loginWithGoogle();
       sounds.playTargetHit();
       setSuccessMessage(`Signed in with Google as ${user.name}!`);
       setTimeout(() => {
         onSuccess(user);
       }, 500);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google authentication failed.';
+      const msg = err instanceof Error ? err.message : 'Google authentication is not configured for this domain.';
       setError(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const fillDemoAccount = () => {
+    setEmail('harshvardhan32613261@gmail.com');
+    setPassword('sparrow123');
+    setError(null);
+  };
+
   const handleGuestContinue = () => {
+    if (isLoading) return;
     sounds.playClick('left');
     const guestUser = authService.continueAsGuest();
     onSuccess(guestUser);
@@ -202,7 +212,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-100 text-neutral-900 font-semibold text-xs transition-all shadow-md active:scale-[0.99] cursor-pointer"
+              className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-100 disabled:opacity-60 text-neutral-900 font-semibold text-xs transition-all shadow-md active:scale-[0.99] cursor-pointer"
             >
               {/* Google Brand G Icon */}
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -224,6 +234,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
                 />
               </svg>
               <span>Continue with Google</span>
+              <span className="text-[10px] text-neutral-500 font-normal hidden sm:inline">(OAuth domain required)</span>
             </button>
 
             <div className="relative flex items-center justify-center">
@@ -233,6 +244,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
               </div>
             </div>
           </div>
+
+          {mode === 'login' && (
+            <div className="p-2.5 rounded-xl bg-neutral-950/70 border border-neutral-800/80 flex items-center justify-between text-[11px]">
+              <span className="text-neutral-400">Registered demo account:</span>
+              <button
+                type="button"
+                onClick={fillDemoAccount}
+                className="text-cyan-400 hover:text-cyan-300 font-semibold underline transition-colors"
+              >
+                Autofill Harsh Vardhan
+              </button>
+            </div>
+          )}
 
           {/* Feedback Messages */}
           {error && (
@@ -340,15 +364,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
             </button>
           </form>
 
-          {/* Footer Guest Option */}
-          <div className="pt-2 border-t border-neutral-800 text-center">
+          {/* Footer Guest Option & Storage Privacy Notice */}
+          <div className="pt-3 border-t border-neutral-800 space-y-2 text-center">
             <button
               type="button"
               onClick={handleGuestContinue}
-              className="text-xs text-neutral-400 hover:text-cyan-400 transition-colors"
+              disabled={isLoading}
+              className="text-xs text-neutral-400 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               Continue without signing in as <span className="underline">Guest</span>
             </button>
+            <div className="text-[10px] text-neutral-500 leading-relaxed px-4">
+              Browser-Local Storage: User accounts, custom presets, and calibration are securely preserved in your local browser storage.
+            </div>
           </div>
         </div>
       </div>
