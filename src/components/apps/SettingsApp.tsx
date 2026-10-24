@@ -27,6 +27,8 @@ import {
   Maximize,
   Mic,
   MicOff,
+  Timer,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface SettingsAppProps {
@@ -859,37 +861,229 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
             )}
           </div>
 
-          {/* Eye Wink Clicks */}
+          {/* Eye Blink & Wink Clicks */}
           <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <div>
-                <h4 className="text-xs font-semibold text-white">Eye Wink Trigger</h4>
+                <h4 className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Eye Blink & Wink Click Trigger</span>
+                </h4>
                 <p className="text-[11px] text-neutral-400">
-                  Left wink = Left click · Right wink = Right click
+                  Filters normal involuntary blinks (100–250ms) and clicks only on deliberate eye hold
                 </p>
               </div>
               <input
                 type="checkbox"
                 checked={config.blinkClickEnabled}
                 onChange={(e) => onUpdateConfig({ blinkClickEnabled: e.target.checked })}
-                className="w-4 h-4 rounded accent-cyan-500"
+                className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
               />
             </div>
+
             {config.blinkClickEnabled && (
-              <div className="mt-4 pt-3 border-t border-neutral-800">
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-neutral-400">Wink Detection Sensitivity</span>
-                  <span className="font-mono text-cyan-400">{config.blinkThreshold.toFixed(2)} EAR</span>
+              <div className="mt-4 pt-3 border-t border-neutral-800 space-y-4">
+                {/* 1. Eye Closed Hold Duration Slider (User Request) */}
+                <div>
+                  <div className="flex justify-between items-center text-xs mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Timer className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-neutral-200 font-medium">Eye Closed Duration to Click</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-neutral-500">Normal blinks ignored</span>
+                      <span className="font-mono text-cyan-400 font-bold bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800">
+                        {config.blinkHoldDurationMs || 400}ms
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="150"
+                      max="1200"
+                      step="25"
+                      value={config.blinkHoldDurationMs || 400}
+                      onChange={(e) => onUpdateConfig({ blinkHoldDurationMs: parseInt(e.target.value) })}
+                      className="flex-1 accent-cyan-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
+                    />
+                    <div className="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1 shrink-0">
+                      <input
+                        type="number"
+                        min="150"
+                        max="1200"
+                        step="25"
+                        value={config.blinkHoldDurationMs || 400}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val)) onUpdateConfig({ blinkHoldDurationMs: Math.max(150, Math.min(1200, val)) });
+                        }}
+                        className="w-12 bg-transparent font-mono text-cyan-400 text-xs font-semibold focus:outline-none text-right"
+                      />
+                      <span className="text-[10px] text-neutral-500 font-mono">ms</span>
+                    </div>
+                  </div>
+
+                  {/* Hold Duration Quick Presets */}
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span className="text-[10px] text-neutral-500 mr-1">Presets:</span>
+                    {[
+                      { label: 'Fast (300ms)', value: 300 },
+                      { label: 'Balanced (400ms)', value: 400 },
+                      { label: 'Deliberate (550ms)', value: 550 },
+                      { label: 'Relaxed (750ms)', value: 750 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => {
+                          sounds.playClick('left');
+                          onUpdateConfig({ blinkHoldDurationMs: preset.value });
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
+                          (config.blinkHoldDurationMs || 400) === preset.value
+                            ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/60 font-semibold shadow-sm'
+                            : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white hover:border-neutral-700'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Informational callout */}
+                  <div className="mt-2.5 p-2 rounded-lg bg-neutral-950 border border-neutral-800/80 flex items-start gap-2 text-[11px] leading-relaxed">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                    <span className="text-neutral-400">
+                      Normal involuntary blinks (<strong className="text-neutral-200">100–250ms</strong>) will not trigger accidental clicks. Keeping your eye closed for <strong className="text-cyan-300">≥ {config.blinkHoldDurationMs || 400}ms</strong> registers a deliberate click.
+                    </span>
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min="0.12"
-                  max="0.32"
-                  step="0.01"
-                  value={config.blinkThreshold}
-                  onChange={(e) => onUpdateConfig({ blinkThreshold: parseFloat(e.target.value) })}
-                  className="w-full accent-cyan-500 cursor-pointer"
-                />
+
+                {/* 2. Trigger Mode Selection */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-neutral-300 font-medium">Click Trigger Mode</span>
+                    <span className="text-[10px] text-neutral-500">Gesture mapping</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: 'both_and_winks', label: 'Winks & Both Eyes', desc: 'Left/Right or Both' },
+                      { id: 'winks_only', label: 'Winks Only', desc: 'Single eye winks' },
+                      { id: 'both_eyes_only', label: 'Both Eyes Only', desc: 'Long blink click' },
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => {
+                          sounds.playClick('left');
+                          onUpdateConfig({ blinkTriggerMode: mode.id as any });
+                        }}
+                        className={`p-2 rounded-lg border text-left transition-all ${
+                          (config.blinkTriggerMode || 'both_and_winks') === mode.id
+                            ? 'bg-cyan-950/70 border-cyan-500/60 text-white shadow-sm'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="text-[11px] font-semibold">{mode.label}</div>
+                        <div className="text-[9px] text-neutral-500">{mode.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Wink Detection Sensitivity (EAR Threshold) */}
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-neutral-400">Eye Closure Threshold (EAR Sensitivity)</span>
+                    <span className="font-mono text-cyan-400">{config.blinkThreshold.toFixed(2)} EAR</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.12"
+                    max="0.32"
+                    step="0.01"
+                    value={config.blinkThreshold}
+                    onChange={(e) => onUpdateConfig({ blinkThreshold: parseFloat(e.target.value) })}
+                    className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-neutral-800 rounded-lg appearance-none"
+                  />
+                  <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
+                    <span>Stricter (0.12)</span>
+                    <span>Standard (0.19)</span>
+                    <span>Gentle (0.32)</span>
+                  </div>
+                </div>
+
+                {/* 4. Live Blink Diagnostic Meter */}
+                {trackingState && (
+                  <div className="p-2.5 rounded-lg bg-neutral-950 border border-neutral-800">
+                    <div className="flex items-center justify-between text-[11px] mb-2">
+                      <span className="text-neutral-400 font-medium">Live Eye Diagnostic:</span>
+                      <div>
+                        {trackingState.isNormalBlink ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-950/80 border border-emerald-600/60 text-emerald-300 font-medium animate-pulse">
+                            ✓ Normal Blink Filtered ({trackingState.blinkDurationMs || 180}ms)
+                          </span>
+                        ) : trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0 ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-amber-950/80 border border-amber-500/60 text-amber-300 font-mono font-bold animate-pulse">
+                            Holding: {Math.round(trackingState.blinkHoldProgress * 100)}%
+                          </span>
+                        ) : trackingState.activeGesture?.includes('wink') || trackingState.activeGesture === 'blink_click' ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-950/80 border border-cyan-500/60 text-cyan-300 font-bold">
+                            ⚡ Click Triggered!
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-neutral-500">Eyes Open</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Bar for intentional hold */}
+                    {trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0 ? (
+                      <div className="mb-2">
+                        <div className="h-2 bg-neutral-900 rounded-full overflow-hidden border border-neutral-800">
+                          <div
+                            className="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-75"
+                            style={{ width: `${Math.min(100, trackingState.blinkHoldProgress * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Left & Right EAR live gauges */}
+                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                      <div>
+                        <div className="flex justify-between text-neutral-400 mb-0.5">
+                          <span>Left Eye (EAR):</span>
+                          <span className="font-mono text-cyan-300">{trackingState.leftEyeOpenRatio.toFixed(2)}</span>
+                        </div>
+                        <div className="h-1 bg-neutral-900 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${
+                              trackingState.leftEyeOpenRatio < config.blinkThreshold ? 'bg-amber-400' : 'bg-cyan-500'
+                            }`}
+                            style={{ width: `${Math.min(100, trackingState.leftEyeOpenRatio * 250)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-neutral-400 mb-0.5">
+                          <span>Right Eye (EAR):</span>
+                          <span className="font-mono text-cyan-300">{trackingState.rightEyeOpenRatio.toFixed(2)}</span>
+                        </div>
+                        <div className="h-1 bg-neutral-900 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${
+                              trackingState.rightEyeOpenRatio < config.blinkThreshold ? 'bg-amber-400' : 'bg-cyan-500'
+                            }`}
+                            style={{ width: `${Math.min(100, trackingState.rightEyeOpenRatio * 250)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

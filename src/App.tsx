@@ -456,7 +456,11 @@ function loadSavedTrackingConfig(): TrackingConfig {
     const saved = localStorage.getItem('sparrow_tracking_config');
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...DEFAULT_TRACKING_CONFIG, ...parsed };
+      return {
+        ...DEFAULT_TRACKING_CONFIG,
+        ...parsed,
+        blinkHoldDurationMs: typeof parsed.blinkHoldDurationMs === 'number' ? parsed.blinkHoldDurationMs : 400,
+      };
     }
   } catch {
     // fallback
@@ -1186,6 +1190,7 @@ export default function App() {
             isCursorFrozen={config.isCursorFrozen}
             activeGesture={trackingState.activeGesture}
             config={config}
+            blinkHoldProgress={trackingState.blinkHoldProgress}
             onPerformClick={handlePerformClick}
           />
 

@@ -245,17 +245,34 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
       // 3. Render Canvas (zero React re-renders, 60fps direct GPU compositing)
       const canvas = heatmapCanvasRef.current;
       if (canvas) {
+        // Dynamically synchronize canvas resolution with device pixel ratio & container size
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+        const targetW = Math.max(320, Math.round((rect.width || 640) * dpr));
+        const targetH = Math.max(240, Math.round((rect.height || 480) * dpr));
+
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+        }
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          const width = canvas.width || 640;
-          const height = canvas.height || 480;
+          const width = canvas.width;
+          const height = canvas.height;
+          // Responsive scale factor relative to 640px base for mobile/tablet/desktop
+          const responsiveScale = Math.max(0.65, Math.min(1.5, width / (640 * dpr)));
 
           ctx.clearRect(0, 0, width, height);
 
+          const cal = faceTracker.getCalibration();
+          const rx = cal.restingNoseX * width;
+          const ry = cal.restingNoseY * height;
+
+          // Mode-specific Heatmap / Trails / Diagnostics
           if (currentMode !== 'mesh') {
             const history = motionHistoryRef.current;
             const durationMs = durationSec * 1000;
-            const cal = faceTracker.getCalibration();
 
             // A. Thermal density spots
             if ((currentMode === 'combined' || currentMode === 'heatmap') && history.length > 0) {
@@ -270,9 +287,9 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
                 const px = p.x * width;
                 const py = p.y * height;
                 const isDwell = p.speed < 0.08;
-                const radius = isDwell ? 28 : 18;
+                const radius = (isDwell ? 28 : 18) * responsiveScale;
 
-                const grad = ctx.createRadialGradient(px, py, 2, px, py, radius);
+                const grad = ctx.createRadialGradient(px, py, 2 * responsiveScale, px, py, radius);
                 if (isDwell) {
                   grad.addColorStop(0, `rgba(244, 63, 94, ${0.45 * age})`);
                   grad.addColorStop(0.5, `rgba(251, 146, 60, ${0.25 * age})`);
@@ -308,7 +325,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
                 const x1 = p1.x * width;
                 const y1 = p1.y * height;
 
-                ctx.lineWidth = Math.max(1.5, 5.5 * age);
+                ctx.lineWidth = Math.max(1.5, 5.5 * age * responsiveScale);
                 const isTwitch = p1.accel > 12;
                 ctx.strokeStyle = isTwitch
                   ? `rgba(244, 63, 94, ${0.9 * age})`
@@ -343,53 +360,167 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
               const bh = (maxY - minY) * height;
 
               ctx.save();
-              ctx.setLineDash([4, 4]);
+              ctx.setLineDash([4 * responsiveScale, 4 * responsiveScale]);
               ctx.strokeStyle = coveragePercentRef.current < 20 ? 'rgba(251, 191, 36, 0.6)' : 'rgba(52, 211, 153, 0.6)';
-              ctx.lineWidth = 1.5;
+              ctx.lineWidth = 1.5 * responsiveScale;
               ctx.strokeRect(bx, by, bw, bh);
 
-              ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-              ctx.fillRect(bx, Math.max(0, by - 18), 105, 16);
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+              ctx.fillRect(bx, Math.max(0, by - 18 * responsiveScale), 105 * responsiveScale, 16 * responsiveScale);
               ctx.fillStyle = '#e2e8f0';
-              ctx.font = '10px monospace';
-              ctx.fillText(`Range: ${coveragePercentRef.current}%`, bx + 6, Math.max(12, by - 6));
+              ctx.font = `${Math.round(10 * responsiveScale)}px monospace`;
+              ctx.fillText(`Range: ${coveragePercentRef.current}%`, bx + 6 * responsiveScale, Math.max(12 * responsiveScale, by - 6 * responsiveScale));
               ctx.restore();
             }
 
-            // D. Neutral target center
-            const rx = cal.restingNoseX * width;
-            const ry = cal.restingNoseY * height;
-
+            // D. Neutral target resting center
             ctx.save();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-            ctx.lineWidth = 1;
+            ctx.lineWidth = Math.max(1, 1.2 * responsiveScale);
             ctx.beginPath();
-            ctx.arc(rx, ry, 12, 0, Math.PI * 2);
+            ctx.arc(rx, ry, 12 * responsiveScale, 0, Math.PI * 2);
             ctx.stroke();
 
             ctx.beginPath();
-            ctx.moveTo(rx - 16, ry);
-            ctx.lineTo(rx + 16, ry);
-            ctx.moveTo(rx, ry - 16);
-            ctx.lineTo(rx, ry + 16);
+            ctx.moveTo(rx - 16 * responsiveScale, ry);
+            ctx.lineTo(rx + 16 * responsiveScale, ry);
+            ctx.moveTo(rx, ry - 16 * responsiveScale);
+            ctx.lineTo(rx, ry + 16 * responsiveScale);
             ctx.stroke();
             ctx.restore();
+          }
 
-            // E. Current nose dot
-            if (currentTracking.hasFace) {
-              const curX = currentTracking.rawNoseX * width;
-              const curY = currentTracking.rawNoseY * height;
+          // Persistent Nose Landmark Tracking Marker (Tracking Circle & Crosshair)
+          // Always rendered whenever face tracking is active, EVEN WHEN MESH IS DISABLED
+          if (currentTracking.hasFace) {
+            const curX = currentTracking.rawNoseX * width;
+            const curY = currentTracking.rawNoseY * height;
 
-              ctx.save();
-              ctx.beginPath();
-              ctx.arc(curX, curY, 6, 0, Math.PI * 2);
-              ctx.fillStyle = '#38bdf8';
-              ctx.fill();
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 2;
-              ctx.stroke();
-              ctx.restore();
+            ctx.save();
+
+            // 1. Subtle Motion displacement vector line from neutral center to active nose position
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+            ctx.lineWidth = Math.max(1, 1.4 * responsiveScale);
+            ctx.setLineDash([3 * responsiveScale, 3 * responsiveScale]);
+            ctx.beginPath();
+            ctx.moveTo(rx, ry);
+            ctx.lineTo(curX, curY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 2. Outer pulsing tracking reticle circle
+            const baseRadius = 13 * responsiveScale;
+            const pulse = Math.sin(now / 180) * (2 * responsiveScale);
+            const outerRadius = baseRadius + pulse;
+
+            ctx.shadowColor = 'rgba(56, 189, 248, 0.7)';
+            ctx.shadowBlur = 8 * responsiveScale;
+
+            ctx.beginPath();
+            ctx.arc(curX, curY, outerRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = Math.max(1.2, 2 * responsiveScale);
+            ctx.stroke();
+
+            // 3. Precision cardinal crosshair lines extending outward
+            const crosshairGap = outerRadius + 2 * responsiveScale;
+            const crosshairLen = 8 * responsiveScale;
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = Math.max(1, 1.8 * responsiveScale);
+
+            // Left tick
+            ctx.beginPath();
+            ctx.moveTo(curX - crosshairGap, curY);
+            ctx.lineTo(curX - crosshairGap - crosshairLen, curY);
+            ctx.stroke();
+
+            // Right tick
+            ctx.beginPath();
+            ctx.moveTo(curX + crosshairGap, curY);
+            ctx.lineTo(curX + crosshairGap + crosshairLen, curY);
+            ctx.stroke();
+
+            // Top tick
+            ctx.beginPath();
+            ctx.moveTo(curX, curY - crosshairGap);
+            ctx.lineTo(curX, curY - crosshairGap - crosshairLen);
+            ctx.stroke();
+
+            // Bottom tick
+            ctx.beginPath();
+            ctx.moveTo(curX, curY + crosshairGap);
+            ctx.lineTo(curX, curY + crosshairGap + crosshairLen);
+            ctx.stroke();
+
+            // 4. Subtle inner crosshair lines with center dot gap
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+            ctx.lineWidth = Math.max(0.8, 1 * responsiveScale);
+
+            ctx.beginPath();
+            ctx.moveTo(curX - (outerRadius - 3 * responsiveScale), curY);
+            ctx.lineTo(curX - 4 * responsiveScale, curY);
+            ctx.moveTo(curX + 4 * responsiveScale, curY);
+            ctx.lineTo(curX + (outerRadius - 3 * responsiveScale), curY);
+
+            ctx.moveTo(curX, curY - (outerRadius - 3 * responsiveScale));
+            ctx.lineTo(curX, curY - 4 * responsiveScale);
+            ctx.moveTo(curX, curY + 4 * responsiveScale);
+            ctx.lineTo(curX, curY + (outerRadius - 3 * responsiveScale));
+            ctx.stroke();
+
+            // 5. Core solid nose tracking dot with high-contrast white center
+            ctx.shadowColor = '#0284c7';
+            ctx.shadowBlur = 6 * responsiveScale;
+
+            ctx.beginPath();
+            ctx.arc(curX, curY, Math.max(3, 4.5 * responsiveScale), 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = Math.max(1, 1.6 * responsiveScale);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(curX, curY, Math.max(1.5, 2 * responsiveScale), 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+
+            // 6. Responsive active tracking label tag
+            const labelY = curY - outerRadius - 8 * responsiveScale;
+            if (labelY > 15) {
+              const fontSize = Math.max(8, Math.round(9 * responsiveScale));
+              ctx.font = `600 ${fontSize}px monospace`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+
+              const tagText = 'NOSE TRACK';
+              const textWidth = ctx.measureText(tagText).width;
+              const padX = 4 * responsiveScale;
+              const padY = 2 * responsiveScale;
+
+              ctx.shadowBlur = 0;
+              ctx.fillStyle = 'rgba(10, 15, 26, 0.85)';
+              ctx.fillRect(
+                curX - textWidth / 2 - padX,
+                labelY - fontSize / 2 - padY,
+                textWidth + padX * 2,
+                fontSize + padY * 2
+              );
+
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+              ctx.lineWidth = 0.8;
+              ctx.strokeRect(
+                curX - textWidth / 2 - padX,
+                labelY - fontSize / 2 - padY,
+                textWidth + padX * 2,
+                fontSize + padY * 2
+              );
+
+              ctx.fillStyle = '#7dd3fc';
+              ctx.fillText(tagText, curX, labelY);
             }
+
+            ctx.restore();
           }
         }
       }
@@ -460,23 +591,25 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
   }, [twitchinessIndex]);
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 text-neutral-100 select-none p-4 overflow-y-auto">
+    <div className="flex flex-col h-full bg-neutral-950 text-neutral-100 select-none p-2.5 sm:p-4 overflow-y-auto">
       {/* Top Header & Mode Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-neutral-800 text-xs">
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-2.5 h-2.5 rounded-full ${
-              trackingState.hasFace ? 'bg-cyan-400 shadow-[0_0_8px_#38bdf8]' : 'bg-amber-400'
-            }`}
-          />
-          <span className="font-semibold text-white">Motion Heatmap & Diagnostics</span>
-          <span className="font-mono text-neutral-500 text-[11px] tabular-nums">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-2.5 mb-3 border-b border-neutral-800 text-xs">
+        <div className="flex items-center justify-between sm:justify-start gap-2">
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2.5 h-2.5 rounded-full ${
+                trackingState.hasFace ? 'bg-cyan-400 shadow-[0_0_8px_#38bdf8]' : 'bg-amber-400'
+              }`}
+            />
+            <span className="font-semibold text-white text-xs sm:text-sm">Motion Heatmap & Diagnostics</span>
+          </div>
+          <span className="font-mono text-neutral-500 text-[10px] sm:text-[11px] tabular-nums">
             {trackingState.fps} FPS · {trackingState.latencyMs}ms
           </span>
         </div>
 
-        {/* Heatmap View Selector Tabs */}
-        <div className="flex items-center gap-1.5 bg-neutral-900 p-1 rounded-lg border border-neutral-800 text-[11px]">
+        {/* Heatmap View Selector Tabs (Scrollable on small mobile screens) */}
+        <div className="flex items-center gap-1 sm:gap-1.5 bg-neutral-900 p-1 rounded-lg border border-neutral-800 text-[10px] sm:text-[11px] overflow-x-auto max-w-full">
           {(
             [
               { id: 'combined', label: 'Heatmap + Trail' },
@@ -488,7 +621,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
             <button
               key={tab.id}
               onClick={() => setHeatmapMode(tab.id)}
-              className={`px-2 py-0.5 rounded transition-colors ${
+              className={`px-2 py-1 sm:py-0.5 rounded whitespace-nowrap transition-colors ${
                 heatmapMode === tab.id
                   ? 'bg-neutral-800 text-cyan-300 font-medium shadow-sm'
                   : 'text-neutral-400 hover:text-white'
@@ -500,9 +633,9 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Duration Selector */}
-          <div className="flex items-center gap-1 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-[11px] text-neutral-400">
+          <div className="flex items-center gap-1 bg-neutral-900 px-2 py-1 rounded border border-neutral-800 text-[10px] sm:text-[11px] text-neutral-400">
             <span>Trail:</span>
             {[3, 6, 10].map((sec) => (
               <button
@@ -519,7 +652,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
 
           <button
             onClick={handleClearHeatmap}
-            className="flex items-center gap-1 px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded border border-neutral-800 text-xs transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded border border-neutral-800 text-[10px] sm:text-xs transition-colors"
             title="Reset trailing heatmap history"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -530,7 +663,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
           {onToggleCursorFreeze && (
             <button
               onClick={onToggleCursorFreeze}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border shadow-sm ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] sm:text-xs font-medium transition-colors border shadow-sm ${
                 isCursorFrozen
                   ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-400 animate-pulse'
                   : 'bg-amber-950/70 hover:bg-amber-900 text-amber-200 border-amber-700/60'
@@ -545,7 +678,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
               ) : (
                 <>
                   <Pause className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Stop Moving Cursor</span>
+                  <span>Stop Moving</span>
                 </>
               )}
             </button>
@@ -555,7 +688,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
           {isCameraStarted && onStopCamera ? (
             <button
               onClick={onStopCamera}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-600/70 rounded text-xs font-semibold transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-600/70 rounded text-[10px] sm:text-xs font-semibold transition-colors shadow-sm"
               title="Stop Webcam Stream & Face Tracking"
             >
               <CameraOff className="w-3.5 h-3.5 text-rose-400" />
@@ -564,7 +697,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
           ) : onStartCamera ? (
             <button
               onClick={onStartCamera}
-              className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-semibold transition-colors shadow-sm animate-pulse"
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[10px] sm:text-xs font-semibold transition-colors shadow-sm animate-pulse"
               title="Start Webcam Stream & Face Tracking"
             >
               <Camera className="w-3.5 h-3.5" />
@@ -577,7 +710,7 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
               sounds.playRecenter();
               onRecenter();
             }}
-            className="flex items-center gap-1.5 px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded text-xs transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium rounded text-[10px] sm:text-xs transition-colors shadow-sm"
           >
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             <span>Recenter</span>
@@ -585,8 +718,8 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
         </div>
       </div>
 
-      {/* Main Video Viewport with Live Motion Heatmap Overlay */}
-      <div className="relative aspect-video max-h-[320px] w-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-xl mb-4 flex items-center justify-center">
+      {/* Main Video Viewport with Live Motion Heatmap & Persistent Tracking Marker */}
+      <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-xl mb-3 sm:mb-4 flex items-center justify-center min-h-[190px] max-h-[380px]">
         {/* Stopped Camera Overlay */}
         {!isCameraStarted && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-neutral-950/95 text-center p-4 backdrop-blur-sm">
@@ -798,13 +931,23 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
           <div className="font-mono text-xs tabular-nums">
             {trackingState.isBlinkingLeft ? (
               <span className="text-amber-300 font-bold">CLICK</span>
+            ) : trackingState.isNormalBlink ? (
+              <span className="text-emerald-400 font-semibold text-[10px]">BLINK IGNORED</span>
+            ) : trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0 && trackingState.leftEyeOpenRatio < 0.22 ? (
+              <span className="text-amber-400 font-bold text-[10px]">HOLD {Math.round(trackingState.blinkHoldProgress * 100)}%</span>
             ) : (
               <span className="text-neutral-300">EAR {trackingState.leftEyeOpenRatio.toFixed(2)}</span>
             )}
           </div>
           <div className="h-1 bg-neutral-800 rounded-full mt-1.5 overflow-hidden">
             <div
-              className="h-full bg-cyan-400 transition-all"
+              className={`h-full transition-all ${
+                trackingState.isBlinkingLeft
+                  ? 'bg-amber-400'
+                  : trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0
+                  ? 'bg-amber-500'
+                  : 'bg-cyan-400'
+              }`}
               style={{ width: `${Math.min(100, trackingState.leftEyeOpenRatio * 250)}%` }}
             />
           </div>
@@ -819,13 +962,23 @@ export const CameraVisionApp: React.FC<CameraVisionAppProps> = ({
           <div className="font-mono text-xs tabular-nums">
             {trackingState.isBlinkingRight ? (
               <span className="text-amber-300 font-bold">CLICK</span>
+            ) : trackingState.isNormalBlink ? (
+              <span className="text-emerald-400 font-semibold text-[10px]">BLINK IGNORED</span>
+            ) : trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0 && trackingState.rightEyeOpenRatio < 0.22 ? (
+              <span className="text-amber-400 font-bold text-[10px]">HOLD {Math.round(trackingState.blinkHoldProgress * 100)}%</span>
             ) : (
               <span className="text-neutral-300">EAR {trackingState.rightEyeOpenRatio.toFixed(2)}</span>
             )}
           </div>
           <div className="h-1 bg-neutral-800 rounded-full mt-1.5 overflow-hidden">
             <div
-              className="h-full bg-cyan-400 transition-all"
+              className={`h-full transition-all ${
+                trackingState.isBlinkingRight
+                  ? 'bg-amber-400'
+                  : trackingState.blinkHoldProgress && trackingState.blinkHoldProgress > 0
+                  ? 'bg-amber-500'
+                  : 'bg-cyan-400'
+              }`}
               style={{ width: `${Math.min(100, trackingState.rightEyeOpenRatio * 250)}%` }}
             />
           </div>

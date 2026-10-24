@@ -20,6 +20,8 @@ export const DEFAULT_TRACKING_CONFIG: TrackingConfig = {
   dwellRadius: 28,
   blinkClickEnabled: true,
   blinkThreshold: 0.19,
+  blinkHoldDurationMs: 400, // 400ms threshold distinguishes intentional clicks from normal 100-250ms blinks
+  blinkTriggerMode: 'both_and_winks',
   mouthClickEnabled: true,
   mouthThreshold: 0.42,
   mouthAction: 'left_click',
@@ -63,12 +65,18 @@ export class FaceTrackerService {
     isCalibrated: false,
   };
 
-  // Blink debounce & state
-  private leftBlinkStartTime: number = 0;
-  private rightBlinkStartTime: number = 0;
-  private mouthOpenStartTime: number = 0;
+  // Intelligent Eye Blink & Wink State & Timing
+  private eyeClosedStartTime: number | null = null;
+  private eyeClosedType: 'left' | 'right' | 'both' | null = null;
+  private blinkClickFired: boolean = false;
+  private lastBlinkClickTime: number = 0;
+  private normalBlinkDetectedUntil: number = 0;
+  private lastNormalBlinkDuration: number = 0;
+  private currentBlinkHoldProgress: number = 0;
   private isBlinkingLeft: boolean = false;
   private isBlinkingRight: boolean = false;
+  private isBothEyesClosed: boolean = false;
+  private mouthOpenStartTime: number = 0;
   private isMouthOpen: boolean = false;
   private isDragging: boolean = false;
 
@@ -78,6 +86,8 @@ export class FaceTrackerService {
   private fps: number = 0;
   private latencyMs: number = 0;
   private backgroundTimerId: number | null = null;
+  private prevNoseX: number | null = null;
+  private prevNoseY: number | null = null;
 
   constructor() {
     this.smoothedCursorX = window.innerWidth / 2;
@@ -439,32 +449,100 @@ export class FaceTrackerService {
     let activeGesture: string | null = null;
     const now = performance.now();
 
-    // Blink detection
+    // Robust Blink vs. Wink vs. Normal Involuntary Blink Classifier
     const isLeftEyeClosed = leftEAR < this.config.blinkThreshold;
     const isRightEyeClosed = rightEAR < this.config.blinkThreshold;
+    const isBothClosed = isLeftEyeClosed && isRightEyeClosed;
+    const isLeftWink = isLeftEyeClosed && !isRightEyeClosed;
+    const isRightWink = isRightEyeClosed && !isLeftEyeClosed;
+    const isAnyEyeClosed = isLeftEyeClosed || isRightEyeClosed;
+
+    const holdThreshold = this.config.blinkHoldDurationMs || 400;
+    const triggerMode = this.config.blinkTriggerMode || 'both_and_winks';
+
+    let isNormalBlink = now < this.normalBlinkDetectedUntil;
+    let blinkHoldProgress = 0;
 
     if (this.config.blinkClickEnabled && hasFace) {
-      // Left eye wink
-      if (isLeftEyeClosed && !isRightEyeClosed) {
-        if (!this.isBlinkingLeft && now - this.leftBlinkStartTime > 180) {
-          this.isBlinkingLeft = true;
-          this.leftBlinkStartTime = now;
-          activeGesture = 'wink_left';
-        }
-      } else {
-        this.isBlinkingLeft = false;
-      }
+      if (isAnyEyeClosed) {
+        // Eyes are currently closed
+        const currentType: 'left' | 'right' | 'both' = isBothClosed ? 'both' : (isLeftWink ? 'left' : 'right');
 
-      // Right eye wink
-      if (isRightEyeClosed && !isLeftEyeClosed) {
-        if (!this.isBlinkingRight && now - this.rightBlinkStartTime > 180) {
-          this.isBlinkingRight = true;
-          this.rightBlinkStartTime = now;
-          activeGesture = 'wink_right';
+        if (this.eyeClosedStartTime === null) {
+          // Just closed! Record start time
+          this.eyeClosedStartTime = now;
+          this.eyeClosedType = currentType;
+          this.blinkClickFired = false;
+        } else {
+          // If eye type upgraded to 'both' within first 120ms (e.g. slight natural eyelid closure asymmetry)
+          if (currentType === 'both' && this.eyeClosedType !== 'both' && (now - this.eyeClosedStartTime < 120)) {
+            this.eyeClosedType = 'both';
+          }
+        }
+
+        const elapsed = now - this.eyeClosedStartTime;
+        blinkHoldProgress = Math.min(1, elapsed / holdThreshold);
+        this.currentBlinkHoldProgress = blinkHoldProgress;
+
+        const activeType = this.eyeClosedType || currentType;
+        this.isBlinkingLeft = activeType === 'left' && elapsed >= holdThreshold;
+        this.isBlinkingRight = activeType === 'right' && elapsed >= holdThreshold;
+        this.isBothEyesClosed = isBothClosed;
+
+        // Check if held long enough to exceed normal involuntary blink duration
+        // and qualify as an INTENTIONAL CLICK!
+        if (elapsed >= holdThreshold && !this.blinkClickFired && (now - this.lastBlinkClickTime > 450)) {
+          if (activeType === 'both' && (triggerMode === 'both_and_winks' || triggerMode === 'both_eyes_only')) {
+            // Intentional Both-Eyes Long Blink Click
+            activeGesture = 'blink_click';
+            this.blinkClickFired = true;
+            this.lastBlinkClickTime = now;
+          } else if (activeType === 'left' && (triggerMode === 'both_and_winks' || triggerMode === 'winks_only')) {
+            // Intentional Left Wink Click (Left click)
+            activeGesture = 'wink_left';
+            this.blinkClickFired = true;
+            this.lastBlinkClickTime = now;
+          } else if (activeType === 'right' && (triggerMode === 'both_and_winks' || triggerMode === 'winks_only')) {
+            // Intentional Right Wink Click (Right click)
+            activeGesture = 'wink_right';
+            this.blinkClickFired = true;
+            this.lastBlinkClickTime = now;
+          }
         }
       } else {
+        // Eyes are currently OPEN
+        this.isBlinkingLeft = false;
         this.isBlinkingRight = false;
+        this.isBothEyesClosed = false;
+
+        if (this.eyeClosedStartTime !== null) {
+          const closedDuration = now - this.eyeClosedStartTime;
+
+          // If closed and opened before reaching intentional hold duration (and wasn't a micro-glitch < 40ms)
+          // and click didn't fire:
+          if (closedDuration >= 40 && closedDuration < holdThreshold && !this.blinkClickFired) {
+            // NORMAL INVOLUNTARY BLINK!
+            // Correctly identified and ignored without accidental click!
+            this.lastNormalBlinkDuration = Math.round(closedDuration);
+            this.normalBlinkDetectedUntil = now + 900;
+            isNormalBlink = true;
+          }
+
+          // Reset timers for next blink/wink
+          this.eyeClosedStartTime = null;
+          this.eyeClosedType = null;
+          this.blinkClickFired = false;
+          this.currentBlinkHoldProgress = 0;
+        }
       }
+    } else {
+      this.eyeClosedStartTime = null;
+      this.eyeClosedType = null;
+      this.blinkClickFired = false;
+      this.currentBlinkHoldProgress = 0;
+      this.isBlinkingLeft = false;
+      this.isBlinkingRight = false;
+      this.isBothEyesClosed = false;
     }
 
     // Mouth Open detection
@@ -485,55 +563,65 @@ export class FaceTrackerService {
       }
     }
 
-    // Cursor movement calculations
-    let deltaX = (noseX - this.calibration.restingNoseX);
-    let deltaY = (noseY - this.calibration.restingNoseY);
+    // Cursor movement calculations: only update when face is actively tracked and not frozen
+    let deltaX = 0;
+    let deltaY = 0;
 
-    if (this.config.invertX) deltaX = -deltaX;
-    if (this.config.invertY) deltaY = -deltaY;
+    if (hasFace && !this.config.isCursorFrozen) {
+      deltaX = (noseX - this.calibration.restingNoseX);
+      deltaY = (noseY - this.calibration.restingNoseY);
 
-    // Apply deadzone
-    const distance = Math.hypot(deltaX, deltaY);
-    if (distance < this.config.deadzone) {
-      deltaX = 0;
-      deltaY = 0;
-    } else {
-      const scale = (distance - this.config.deadzone) / distance;
-      deltaX *= scale;
-      deltaY *= scale;
-    }
+      if (this.config.invertX) deltaX = -deltaX;
+      if (this.config.invertY) deltaY = -deltaY;
 
-    // Dynamic responsiveness & progressive acceleration
-    // Preserves fine micro-motion linear accuracy while boosting rapid head turns
-    const absX = Math.abs(deltaX);
-    const absY = Math.abs(deltaY);
-    const accelFactor = Math.max(1, this.config.acceleration || 1.25);
-    const accelBoostX = 1 + (accelFactor - 1) * Math.min(2.5, absX * 14);
-    const accelBoostY = 1 + (accelFactor - 1) * Math.min(2.5, absY * 14);
-    const effectiveDeltaX = deltaX * accelBoostX;
-    const effectiveDeltaY = deltaY * accelBoostY;
+      // Jitter dampening / frame noise gating:
+      // If motion from previous frame is within small noise floor, hold steady to let user target/click cleanly
+      const frameDelta = (this.prevNoseX !== null && this.prevNoseY !== null)
+        ? Math.hypot(noseX - this.prevNoseX, noseY - this.prevNoseY)
+        : 1;
 
-    // Compute target screen cursor position
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
+      if (frameDelta > (this.config.deadzone * 0.35)) {
+        this.prevNoseX = noseX;
+        this.prevNoseY = noseY;
+      }
 
-    // Base multiplier: 5.5 scales normalized video delta (typically 0.02 - 0.08)
-    // so standard 2.2x sensitivity comfortably traverses modern wide displays
-    const sensX = Math.max(0.1, this.config.sensitivityX);
-    const sensY = Math.max(0.1, this.config.sensitivityY);
-    const targetX = screenWidth / 2 + effectiveDeltaX * screenWidth * sensX * 5.5;
-    const targetY = screenHeight / 2 + effectiveDeltaY * screenHeight * sensY * 5.5;
+      // Rest-pose deadzone: smooth continuous attenuation near center rather than a harsh snap
+      const restDistance = Math.hypot(deltaX, deltaY);
+      if (restDistance < this.config.deadzone) {
+        const softFactor = Math.pow(restDistance / Math.max(0.0001, this.config.deadzone), 1.5);
+        deltaX *= softFactor;
+        deltaY *= softFactor;
+      }
 
-    // Exponential Moving Average (EMA) smoothing
-    // Only update cursor position if cursor is NOT frozen!
-    if (!this.config.isCursorFrozen) {
-      const alpha = Math.max(0.04, Math.min(0.96, this.config.smoothing));
-      this.smoothedCursorX = this.smoothedCursorX + (targetX - this.smoothedCursorX) * alpha;
-      this.smoothedCursorY = this.smoothedCursorY + (targetY - this.smoothedCursorY) * alpha;
+      // Dynamic responsiveness & progressive acceleration
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
+      const accelFactor = Math.max(1, this.config.acceleration || 1.25);
+      const accelBoostX = 1 + (accelFactor - 1) * Math.min(2.5, absX * 14);
+      const accelBoostY = 1 + (accelFactor - 1) * Math.min(2.5, absY * 14);
+      const effectiveDeltaX = deltaX * accelBoostX;
+      const effectiveDeltaY = deltaY * accelBoostY;
 
-      // Clamp inside viewport
-      this.smoothedCursorX = Math.max(0, Math.min(screenWidth - 1, this.smoothedCursorX));
-      this.smoothedCursorY = Math.max(0, Math.min(screenHeight - 1, this.smoothedCursorY));
+      // Compute target screen cursor position
+      const screenWidth = window.innerWidth;
+      const screenHeight = window.innerHeight;
+
+      const sensX = Math.max(0.1, this.config.sensitivityX);
+      const sensY = Math.max(0.1, this.config.sensitivityY);
+      const targetX = screenWidth / 2 + effectiveDeltaX * screenWidth * sensX * 5.5;
+      const targetY = screenHeight / 2 + effectiveDeltaY * screenHeight * sensY * 5.5;
+
+      // Subpixel deadband: do not jitter when hovering directly over a target
+      const distToTarget = Math.hypot(targetX - this.smoothedCursorX, targetY - this.smoothedCursorY);
+      if (distToTarget > 1.2) {
+        const alpha = Math.max(0.04, Math.min(0.96, this.config.smoothing));
+        this.smoothedCursorX = this.smoothedCursorX + (targetX - this.smoothedCursorX) * alpha;
+        this.smoothedCursorY = this.smoothedCursorY + (targetY - this.smoothedCursorY) * alpha;
+
+        // Clamp inside viewport
+        this.smoothedCursorX = Math.max(0, Math.min(screenWidth - 1, this.smoothedCursorX));
+        this.smoothedCursorY = Math.max(0, Math.min(screenHeight - 1, this.smoothedCursorY));
+      }
     }
 
     this.latencyMs = Math.round(performance.now() - timestamp);
@@ -556,6 +644,10 @@ export class FaceTrackerService {
       mouthOpenRatio: mouthMAR,
       isBlinkingLeft: this.isBlinkingLeft,
       isBlinkingRight: this.isBlinkingRight,
+      isBothEyesClosed: this.isBothEyesClosed,
+      isNormalBlink,
+      blinkDurationMs: this.lastNormalBlinkDuration,
+      blinkHoldProgress,
       isMouthOpen: this.isMouthOpen,
       isDragging: this.isDragging,
       fps: this.fps,

@@ -20,6 +20,8 @@ export interface TrackingConfig {
   dwellRadius: number; // pixels radius for dwell detection
   blinkClickEnabled: boolean;
   blinkThreshold: number; // 0.15 - 0.35 EAR
+  blinkHoldDurationMs: number; // 150 - 1200 ms: hold time required to differentiate intentional click from normal blink
+  blinkTriggerMode?: 'both_and_winks' | 'winks_only' | 'both_eyes_only';
   mouthClickEnabled: boolean;
   mouthThreshold: number; // 0.3 - 0.7 MAR
   mouthAction: MouthAction;
@@ -51,6 +53,10 @@ export interface FaceTrackingState {
   mouthOpenRatio: number;
   isBlinkingLeft: boolean;
   isBlinkingRight: boolean;
+  isBothEyesClosed?: boolean;
+  isNormalBlink?: boolean;
+  blinkDurationMs?: number;
+  blinkHoldProgress?: number; // 0 to 1 hold progress towards click
   isMouthOpen: boolean;
   isDragging: boolean;
   fps: number;

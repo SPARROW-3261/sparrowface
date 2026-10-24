@@ -81,7 +81,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: true,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 12,
+    zIndex: 25,
     x: 32,
     y: 28,
     width: 540,
@@ -94,7 +94,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: true,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 11,
+    zIndex: 24,
     x: 590,
     y: 28,
     width: 580,
@@ -107,7 +107,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 10,
+    zIndex: 23,
     x: 140,
     y: 45,
     width: 720,
@@ -120,7 +120,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 9,
+    zIndex: 22,
     x: 80,
     y: 60,
     width: 720,
@@ -133,7 +133,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 8,
+    zIndex: 21,
     x: 120,
     y: 80,
     width: 640,
@@ -146,7 +146,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 7,
+    zIndex: 20,
     x: 100,
     y: 50,
     width: 700,
@@ -159,7 +159,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 6,
+    zIndex: 20,
     x: 140,
     y: 90,
     width: 580,
@@ -172,7 +172,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 5,
+    zIndex: 20,
     x: 180,
     y: 110,
     width: 320,
@@ -185,7 +185,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 11,
+    zIndex: 25,
     x: 70,
     y: 40,
     width: 740,
@@ -198,7 +198,7 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
-    zIndex: 10,
+    zIndex: 24,
     x: 90,
     y: 35,
     width: 780,
@@ -269,7 +269,7 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
   const bringToFront = (id: string) => {
     setActiveWindowId(id);
     setWindows((prev) => {
-      const maxZ = Math.max(...prev.map((w) => w.zIndex), 10);
+      const maxZ = Math.max(...prev.map((w) => w.zIndex), 20);
       return prev.map((w) => (w.id === id ? { ...w, zIndex: maxZ + 1, isMinimized: false } : w));
     });
   };
@@ -278,7 +278,7 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
     sounds.playClick('left');
     setStartMenuOpen(false);
     setWindows((prev) => {
-      const maxZ = Math.max(...prev.map((w) => w.zIndex), 10);
+      const maxZ = Math.max(...prev.map((w) => w.zIndex), 20);
       return prev.map((w) => (w.id === id ? { ...w, isOpen: true, isMinimized: false, zIndex: maxZ + 1 } : w));
     });
     setActiveWindowId(id);
@@ -390,7 +390,7 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
         className="relative flex-1 p-6 overflow-hidden cursor-default"
       >
         {/* Desktop Application Icons Grid */}
-        <div className="relative flex flex-col flex-wrap gap-4 h-full max-w-xs z-10 pointer-events-auto">
+        <div className="relative flex flex-col flex-wrap gap-4 h-full max-w-xs z-0 pointer-events-auto">
           {[
             { id: 'camera', label: 'Face Camera', icon: 'camera', desc: 'Live face tracking' },
             { id: 'performance_logger', label: 'Perf Logger', icon: 'activity', desc: 'FPS & jitter JSON' },
@@ -480,10 +480,10 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
                   zIndex: win.zIndex,
                   display: win.isMinimized ? 'none' : 'flex',
                 }}
-                className={`flex flex-col rounded-xl overflow-hidden bg-neutral-950/95 border backdrop-blur-xl shadow-2xl transition-[border-color,box-shadow] duration-150 ${
+                className={`flex flex-col rounded-xl overflow-hidden bg-neutral-950 border shadow-2xl transition-[border-color,box-shadow] duration-150 ${
                   isActive
                     ? 'border-cyan-500/60 shadow-[0_16px_40px_rgba(0,0,0,0.6)] ring-1 ring-cyan-500/20'
-                    : 'border-neutral-800 shadow-[0_8px_24px_rgba(0,0,0,0.4)] opacity-95'
+                    : 'border-neutral-800 shadow-[0_8px_24px_rgba(0,0,0,0.4)]'
                 }`}
               >
                 {/* Window Title Bar */}
@@ -837,6 +837,32 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
               Space
             </kbd>
           </button>
+
+          {/* Face Lock Status Chip with Tracking Symbol & Dot */}
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-all ${
+              trackingState.hasFace
+                ? 'bg-cyan-950/70 border-cyan-500/60 text-cyan-300 shadow-sm'
+                : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+            }`}
+            title={trackingState.hasFace ? 'Face Tracking Lock: Active (Detecting motion)' : 'Face Tracking Lock: Searching for face...'}
+          >
+            <div className="relative flex items-center justify-center w-3.5 h-3.5">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+                <path d="M3 17v2a2 2 0 0 0 2 2h2" />
+                <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+                <path d="M17 21h2a2 2 0 0 0 2-2v-2" />
+                <circle cx="12" cy="12" r="2.5" className={trackingState.hasFace ? 'fill-cyan-400 stroke-cyan-300' : 'fill-neutral-600 stroke-neutral-500'} />
+              </svg>
+              {trackingState.hasFace && (
+                <span className="absolute inset-0 rounded-full border border-cyan-400 animate-ping opacity-60" />
+              )}
+            </div>
+            <span className="hidden xl:inline text-[11px] font-semibold">
+              {trackingState.hasFace ? 'Face Locked' : 'Searching Face'}
+            </span>
+          </div>
 
           {/* Quick Sensitivity Control & Flyout */}
           <div className="relative">

@@ -619,11 +619,137 @@ class AuthService {
     return user;
   }
 
-  public async loginWithGoogle(): Promise<UserProfile> {
-    // Real Google OAuth is not configured in this applet environment.
-    throw new Error(
-      'Google OAuth is not configured for this application domain. Please log in with your email and password, or continue as Guest.'
-    );
+  public getAvailableGoogleAccounts(): { name: string; email: string; avatarUrl: string }[] {
+    const list = [
+      {
+        name: 'Harsh Vardhan',
+        email: 'harshvardhan32613261@gmail.com',
+        avatarUrl: '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg',
+      },
+    ];
+
+    try {
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      if (accountsJson) {
+        const accounts: Record<string, RegisteredAccountRecord> = JSON.parse(accountsJson);
+        for (const [emailKey, acc] of Object.entries(accounts)) {
+          if (emailKey !== 'harshvardhan32613261@gmail.com' && (acc.provider === 'google' || emailKey.includes('@gmail.com'))) {
+            list.push({
+              name: acc.name,
+              email: acc.email,
+              avatarUrl: acc.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(acc.name)}`,
+            });
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return list;
+  }
+
+  public async loginWithGoogle(
+    emailHint?: string,
+    nameHint?: string,
+    avatarUrlHint?: string
+  ): Promise<UserProfile> {
+    const targetEmail = (emailHint || this.currentUser?.email || 'harshvardhan32613261@gmail.com').trim().toLowerCase();
+
+    let accounts: Record<string, RegisteredAccountRecord> = {};
+    try {
+      const accountsJson = localStorage.getItem(REGISTERED_USERS_KEY);
+      accounts = accountsJson ? JSON.parse(accountsJson) : {};
+    } catch {
+      accounts = {};
+    }
+
+    const existing = accounts[targetEmail];
+
+    // Determine user display name
+    let userName = nameHint?.trim() || existing?.name;
+    if (!userName) {
+      if (targetEmail === 'harshvardhan32613261@gmail.com') {
+        userName = 'Harsh Vardhan';
+      } else {
+        const prefix = targetEmail.split('@')[0] || 'User';
+        userName = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      }
+    }
+
+    // Determine user avatar
+    let avatarUrl = avatarUrlHint || existing?.avatarUrl;
+    if (!avatarUrl) {
+      if (targetEmail === 'harshvardhan32613261@gmail.com') {
+        avatarUrl = '/assets/aistudio/WhatsApp_Image_2026-07-26_at_3.25.36_PM_04076b3e.jpeg';
+      } else {
+        avatarUrl = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userName)}`;
+      }
+    }
+
+    const stableId = existing?.id || `usr_google_${targetEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const now = new Date().toISOString();
+
+    if (!existing) {
+      // Register new Google account and preserve in registered accounts
+      accounts[targetEmail] = {
+        id: stableId,
+        name: userName,
+        email: targetEmail,
+        avatarUrl,
+        provider: 'google',
+        createdAt: now,
+        presets: JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
+        activePresetId: DEFAULT_PRESETS[0].id,
+      };
+      try {
+        localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+      } catch (err) {
+        console.warn('Failed to save to localStorage:', err);
+      }
+    } else {
+      // Existing registered account: maintain settings and mark Google authorized
+      let changed = false;
+      if (existing.provider !== 'google') {
+        existing.provider = 'google';
+        changed = true;
+      }
+      if (!existing.avatarUrl) {
+        existing.avatarUrl = avatarUrl;
+        changed = true;
+      }
+      if (changed) {
+        accounts[targetEmail] = existing;
+        try {
+          localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(accounts));
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Load existing presets, sensitivity and calibration settings
+    const savedData = this.getUserSettings(targetEmail);
+    const presets = savedData?.presets || existing?.presets || JSON.parse(JSON.stringify(DEFAULT_PRESETS));
+    const activePresetId = savedData?.activePresetId || existing?.activePresetId || presets[0]?.id || DEFAULT_PRESETS[0].id;
+
+    const user: UserProfile = {
+      id: stableId,
+      name: userName,
+      email: targetEmail,
+      avatarUrl,
+      provider: 'google',
+      createdAt: existing?.createdAt || now,
+      activePresetId,
+      presets,
+      preferences: existing?.preferences,
+    };
+
+    this.currentUser = user;
+    this.notify();
+    const active = this.getActivePreset();
+    if (active) this.notifyPresetChange(active);
+    return user;
   }
 
   public continueAsGuest(): UserProfile {

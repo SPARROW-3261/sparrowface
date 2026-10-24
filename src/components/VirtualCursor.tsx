@@ -16,6 +16,7 @@ interface VirtualCursorProps {
   isCursorFrozen?: boolean;
   activeGesture: string | null;
   config: TrackingConfig;
+  blinkHoldProgress?: number;
   onPerformClick?: (x: number, y: number, button: 'left' | 'right') => void;
 }
 
@@ -27,6 +28,7 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
   isCursorFrozen,
   activeGesture,
   config,
+  blinkHoldProgress = 0,
   onPerformClick,
 }) => {
   const [dwellProgress, setDwellProgress] = useState<number>(0);
@@ -137,7 +139,7 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
   useEffect(() => {
     if (!activeGesture || !isTracking) return;
 
-    if (activeGesture === 'wink_left' || activeGesture === 'mouth_click') {
+    if (activeGesture === 'wink_left' || activeGesture === 'blink_click' || activeGesture === 'mouth_click') {
       triggerClickAt(x, y, 'left');
     } else if (activeGesture === 'wink_right') {
       triggerClickAt(x, y, 'right');
@@ -149,9 +151,10 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
   const radius = 22;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - dwellProgress * circumference;
+  const blinkDashoffset = circumference - (blinkHoldProgress || 0) * circumference;
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+    <div className="fixed inset-0 pointer-events-none z-[99999] overflow-hidden">
       {/* Click ripples */}
       {clickRipples.map((ripple) => (
         <div
@@ -253,11 +256,42 @@ export const VirtualCursor: React.FC<VirtualCursorProps> = ({
           </div>
         )}
 
+        {/* Intentional Blink Hold Countdown Radial Ring */}
+        {blinkHoldProgress > 0 && (!config.dwellClickEnabled || dwellProgress === 0) && (
+          <div className="absolute -left-[26px] -top-[26px] w-[52px] h-[52px]">
+            <svg className="w-full h-full -rotate-90">
+              <circle
+                cx="26"
+                cy="26"
+                r={radius}
+                fill="none"
+                stroke="rgba(251, 191, 36, 0.25)"
+                strokeWidth="3"
+              />
+              <circle
+                cx="26"
+                cy="26"
+                r={radius}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="3.5"
+                strokeDasharray={circumference}
+                strokeDashoffset={blinkDashoffset}
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-mono bg-amber-950/90 text-amber-300 px-1 py-0.2 rounded border border-amber-600/50 shadow whitespace-nowrap">
+              HOLD {Math.round(blinkHoldProgress * 100)}%
+            </span>
+          </div>
+        )}
+
         {/* Gesture badge feedback */}
         {activeGesture && (
           <div className="absolute left-6 -top-2 whitespace-nowrap bg-neutral-900/90 text-white border border-neutral-700 text-[11px] font-mono px-2 py-0.5 rounded shadow-lg backdrop-blur">
             {activeGesture === 'wink_left' && 'Left Click (Wink)'}
             {activeGesture === 'wink_right' && 'Right Click (Wink)'}
+            {activeGesture === 'blink_click' && 'Left Click (Blink)'}
             {activeGesture === 'mouth_click' && 'Mouth Click'}
             {activeGesture === 'drag_start' && 'Dragging'}
             {activeGesture === 'drag_stop' && 'Released'}

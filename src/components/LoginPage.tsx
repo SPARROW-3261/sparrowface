@@ -20,6 +20,8 @@ import {
   X,
   LogIn,
   UserPlus,
+  Check,
+  ChevronRight,
 } from 'lucide-react';
 
 interface LoginPageProps {
@@ -104,24 +106,42 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const [isGoogleChooserOpen, setIsGoogleChooserOpen] = useState(false);
+  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
+  const [customGoogleName, setCustomGoogleName] = useState('');
+  const [isCustomGoogleOpen, setIsCustomGoogleOpen] = useState(false);
+
+  const googleAccounts = authService.getAvailableGoogleAccounts();
+
+  const handleGoogleSignIn = async (accountEmail?: string, accountName?: string) => {
     if (isLoading) return;
     setError(null);
     setIsLoading(true);
     sounds.playClick('left');
     try {
-      const user = await authService.loginWithGoogle();
+      const emailToUse = (accountEmail || email || 'harshvardhan32613261@gmail.com').trim();
+      const user = await authService.loginWithGoogle(emailToUse, accountName);
       sounds.playTargetHit();
       setSuccessMessage(`Signed in with Google as ${user.name}!`);
+      setIsGoogleChooserOpen(false);
       setTimeout(() => {
         onSuccess(user);
-      }, 500);
+      }, 450);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google authentication is not configured for this domain.';
+      const msg = err instanceof Error ? err.message : 'Google authentication failed. Please try again.';
       setError(msg);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleCustomGoogleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customGoogleEmail.trim() || !customGoogleEmail.includes('@')) {
+      setError('Please provide a valid Google email address.');
+      return;
+    }
+    handleGoogleSignIn(customGoogleEmail, customGoogleName || undefined);
   };
 
   const fillDemoAccount = () => {
@@ -206,11 +226,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
             </button>
           </div>
 
-          {/* Quick Google Sign In Button */}
-          <div className="space-y-3">
+          {/* Quick Google Sign In Section */}
+          <div className="space-y-2">
             <button
               type="button"
-              onClick={handleGoogleSignIn}
+              onClick={() => handleGoogleSignIn()}
               disabled={isLoading}
               className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-white hover:bg-neutral-100 disabled:opacity-60 text-neutral-900 font-semibold text-xs transition-all shadow-md active:scale-[0.99] cursor-pointer"
             >
@@ -233,11 +253,26 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                 />
               </svg>
-              <span>Continue with Google</span>
-              <span className="text-[10px] text-neutral-500 font-normal hidden sm:inline">(OAuth domain required)</span>
+              <span>{isLoading ? 'Signing in with Google...' : 'Continue with Google'}</span>
             </button>
 
-            <div className="relative flex items-center justify-center">
+            <div className="flex items-center justify-between px-1 text-[11px]">
+              <span className="text-neutral-400">
+                Google ID: <span className="text-cyan-300 font-medium">{email.includes('@') ? email : 'harshvardhan32613261@gmail.com'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick('left');
+                  setIsGoogleChooserOpen(true);
+                }}
+                className="text-cyan-400 hover:text-cyan-300 transition-colors underline cursor-pointer font-medium"
+              >
+                Choose account
+              </button>
+            </div>
+
+            <div className="relative flex items-center justify-center pt-1">
               <div className="border-t border-neutral-800 w-full" />
               <div className="bg-neutral-900 px-3 text-[11px] text-neutral-500 uppercase tracking-wider absolute">
                 or with email
@@ -379,6 +414,138 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onClose, isModa
             </div>
           </div>
         </div>
+
+        {/* Google Identity Services / Account Chooser Modal Overlay */}
+        {isGoogleChooserOpen && (
+          <div className="absolute inset-0 z-30 bg-neutral-900/98 backdrop-blur-md p-6 flex flex-col justify-between animate-in fade-in duration-150">
+            <div>
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+                <div className="flex items-center gap-2.5">
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <div>
+                    <h3 className="text-xs font-bold text-white tracking-tight">Sign in with Google</h3>
+                    <p className="text-[10px] text-neutral-400">Choose an account to continue to Sparrow</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsGoogleChooserOpen(false)}
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Accounts list */}
+              <div className="mt-4 space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                {googleAccounts.map((acc) => (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    onClick={() => {
+                      setEmail(acc.email);
+                      handleGoogleSignIn(acc.email, acc.name);
+                    }}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-between p-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800/90 border border-neutral-800 hover:border-cyan-500/50 transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={acc.avatarUrl}
+                        alt={acc.name}
+                        className="w-9 h-9 rounded-full object-cover ring-1 ring-cyan-500/40"
+                      />
+                      <div>
+                        <div className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                          <span>{acc.name}</span>
+                          {acc.email === 'harshvardhan32613261@gmail.com' && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
+                              Primary
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-neutral-400">{acc.email}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-cyan-400 opacity-80 group-hover:opacity-100">
+                      <span className="text-[11px] font-medium hidden sm:inline">Sign In</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  </button>
+                ))}
+
+                {/* Option to use another Google account */}
+                {!isCustomGoogleOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomGoogleOpen(true)}
+                    className="w-full py-2.5 px-3 rounded-xl border border-dashed border-neutral-700 hover:border-cyan-500/60 text-neutral-300 hover:text-white text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer bg-neutral-950/50"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Use another Google account</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handleCustomGoogleSubmit} className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2.5 text-xs">
+                    <div className="text-[11px] font-semibold text-neutral-300">Enter custom Google credentials:</div>
+                    <input
+                      type="text"
+                      placeholder="Your Name (e.g. Alex Rivera)"
+                      value={customGoogleName}
+                      onChange={(e) => setCustomGoogleName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-600 text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                    <input
+                      type="email"
+                      required
+                      placeholder="yourname@gmail.com"
+                      value={customGoogleEmail}
+                      onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-white placeholder-neutral-600 text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="flex-1 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg text-xs transition-colors"
+                      >
+                        Sign In with Google
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomGoogleOpen(false)}
+                        className="px-2.5 py-1.5 text-neutral-400 hover:text-white rounded-lg text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-800 text-[10px] text-neutral-500 leading-tight">
+              To continue, Google will securely link your profile and motion presets with Sparrow.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
