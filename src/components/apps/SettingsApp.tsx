@@ -35,7 +35,7 @@ interface SettingsAppProps {
   config: TrackingConfig;
   onUpdateConfig: (newConfig: Partial<TrackingConfig>) => void;
   onRecenter: () => void;
-  onStartCalibration: () => void;
+  onStartCalibration: (tab?: 'head' | 'blink') => void;
   trackingState?: FaceTrackingState;
   isVoiceListening?: boolean;
   onToggleVoice?: () => void;
@@ -129,9 +129,9 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 text-neutral-100 select-none overflow-y-auto p-4 sm:p-5">
+    <div className="absolute inset-0 bg-neutral-950 text-neutral-100 select-none overflow-y-auto p-3.5 sm:p-5 flex flex-col">
       {/* Quick Calibration & Recenter Bar */}
-      <div className="mb-4 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-neutral-900 border border-cyan-800/40 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
+      <div className="shrink-0 mb-4 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-neutral-900 border border-cyan-800/40 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-cyan-950/70 border border-cyan-700/50 flex items-center justify-center text-cyan-400 shrink-0">
             <Compass className="w-5 h-5 animate-spin-slow" />
@@ -157,14 +157,14 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
               sounds.playRecenter();
               onRecenter();
             }}
-            className="flex-1 sm:flex-initial px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 active:scale-95 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center justify-center gap-1.5"
+            className="flex-1 sm:flex-initial px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 active:scale-95 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Recenter Now</span>
           </button>
           <button
-            onClick={onStartCalibration}
-            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 active:scale-95 text-neutral-200 border border-neutral-700 rounded-lg text-xs font-medium transition-all"
+            onClick={() => onStartCalibration('head')}
+            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 active:scale-95 text-neutral-200 border border-neutral-700 rounded-lg text-xs font-medium transition-all cursor-pointer"
             title="Calibrate 5-point screen extents"
           >
             5-Point Wizard
@@ -172,71 +172,48 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-1 mb-4 border-b border-neutral-800 pb-2 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('sensitivity')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            activeTab === 'sensitivity'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/50 shadow-sm'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Sensitivity & Responsiveness</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('gestures')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            activeTab === 'gestures'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/50 shadow-sm'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          <Eye className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Click Gestures & Dwell</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('cursor')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            activeTab === 'cursor'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/50 shadow-sm'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          <Move className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Cursor Styling</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('camera')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            activeTab === 'camera'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/50 shadow-sm'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          <Crosshair className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Camera & Display</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('voice')}
-          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-            activeTab === 'voice'
-              ? 'bg-cyan-950/70 text-cyan-300 border border-cyan-500/50 shadow-sm'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          {isVoiceListening ? (
-            <Mic className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-          ) : (
-            <MicOff className="w-3.5 h-3.5 text-cyan-400" />
-          )}
-          <span>Voice Commands</span>
-        </button>
+      {/* Navigation Tabs Bar - Fixed Prominent Segmented Pill Container */}
+      <div className="shrink-0 mb-4 bg-neutral-900/90 border border-neutral-800 rounded-xl p-1.5 shadow-lg">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+          {[
+            { id: 'sensitivity', label: 'Sensitivity & Tuning', icon: Sliders },
+            { id: 'gestures', label: 'Click Gestures & Blinks', icon: Eye },
+            { id: 'cursor', label: 'Cursor Styling', icon: Move },
+            { id: 'camera', label: 'Camera & Display', icon: Crosshair },
+            { id: 'voice', label: 'Voice Commands', icon: isVoiceListening ? Mic : MicOff },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  sounds.playClick('left');
+                  setActiveTab(tab.id as SettingsTab);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold shrink-0 whitespace-nowrap transition-all select-none cursor-pointer ${
+                  isActive
+                    ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950/60 ring-1 ring-cyan-400/50'
+                    : 'text-neutral-300 hover:text-white hover:bg-neutral-800/80 bg-neutral-950/70 border border-neutral-800/80'
+                }`}
+              >
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
+                    isActive
+                      ? 'text-white'
+                      : tab.id === 'voice' && isVoiceListening
+                      ? 'text-emerald-400 animate-pulse'
+                      : 'text-cyan-400'
+                  }`}
+                />
+                <span>{tab.label}</span>
+                {tab.id === 'voice' && isVoiceListening && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab 1: Sensitivity & Responsiveness */}
@@ -958,6 +935,35 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
                     <span className="text-neutral-400">
                       Normal involuntary blinks (<strong className="text-neutral-200">100–250ms</strong>) will not trigger accidental clicks. Keeping your eye closed for <strong className="text-cyan-300">≥ {config.blinkHoldDurationMs || 400}ms</strong> registers a deliberate click.
                     </span>
+                  </div>
+
+                  {/* 3-Step Blink Learning Mini-Wizard Interactive Card */}
+                  <div className="mt-3 p-3 rounded-xl bg-gradient-to-r from-cyan-950/60 via-blue-950/40 to-neutral-950 border border-cyan-500/40 flex items-center justify-between gap-3 shadow-md">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shrink-0">
+                        <Sparkles className="w-4 h-4 text-cyan-300" />
+                      </div>
+                      <div className="overflow-hidden">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                          <span>3-Step Blink Learning Wizard</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-400 text-neutral-950 font-bold uppercase tracking-tight">Auto-Detect</span>
+                        </div>
+                        <p className="text-[10px] text-neutral-300 truncate mt-0.5">
+                          Detects your natural involuntary blink speed to calculate your ideal click threshold
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playClick('left');
+                        onStartCalibration('blink');
+                      }}
+                      className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold rounded-lg text-xs shadow-md active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Start Learning</span>
+                    </button>
                   </div>
                 </div>
 

@@ -195,10 +195,7 @@ export const VoiceCheatsheetModal: React.FC<VoiceCheatsheetModalProps> = ({
   const handleCustomSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customInput.trim()) return;
-    const phrase = customInput.toLowerCase().startsWith('sparrow')
-      ? customInput.trim()
-      : `Sparrow ${customInput.trim()}`;
-    handleRunCommand(phrase);
+    handleRunCommand(customInput.trim());
     setCustomInput('');
   };
 
@@ -234,7 +231,7 @@ export const VoiceCheatsheetModal: React.FC<VoiceCheatsheetModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-neutral-400">
-                Prefix commands with <span className="text-cyan-400 font-mono font-semibold">"Sparrow"</span> to execute actions hands-free
+                Direct commands or prefix with <span className="text-cyan-400 font-mono font-semibold">"Sparrow"</span> (e.g. <span className="text-emerald-400 font-mono">"recenter"</span>, <span className="text-emerald-400 font-mono">"stop"</span>, <span className="text-emerald-400 font-mono">"click"</span>)
               </p>
             </div>
           </div>
@@ -312,7 +309,7 @@ export const VoiceCheatsheetModal: React.FC<VoiceCheatsheetModalProps> = ({
                 type="text"
                 value={customInput}
                 onChange={(e) => setCustomInput(e.target.value)}
-                placeholder='Type command to test (e.g. "Sparrow recenter", "Sparrow stop", "Sparrow open notes")'
+                placeholder='Type command to test (e.g. "recenter", "click", "stop", "open notes", or "Sparrow calibrate")'
                 className="w-full pl-9 pr-3 py-1.5 bg-neutral-900 border border-neutral-700/80 rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
               />
             </div>

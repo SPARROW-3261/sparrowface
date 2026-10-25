@@ -239,8 +239,8 @@ export class FaceTrackerService {
         outputFacialTransformationMatrixes: true,
       });
       console.log('MediaPipe FaceLandmarker successfully initialized (GPU)');
-    } catch (mpError) {
-      console.warn('MediaPipe GPU initialization failed, attempting CPU mode:', mpError);
+    } catch {
+      console.info('MediaPipe GPU initialization not available, initializing CPU mode');
       try {
         const filesetResolver = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
@@ -255,8 +255,8 @@ export class FaceTrackerService {
           numFaces: 1,
         });
         console.log('MediaPipe FaceLandmarker successfully initialized (CPU)');
-      } catch (fallbackError) {
-        console.warn('Using high-performance visual centroid tracking:', fallbackError);
+      } catch {
+        console.info('Using high-performance visual centroid tracking fallback');
       }
     }
   }

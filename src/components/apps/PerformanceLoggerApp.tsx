@@ -178,7 +178,7 @@ export const PerformanceLoggerApp: React.FC = () => {
   const latestSample = samples[samples.length - 1];
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 text-neutral-200 select-none overflow-y-auto">
+    <div className="absolute inset-0 flex flex-col bg-neutral-950 text-neutral-200 select-none overflow-y-auto">
       {/* Top Banner & Control Bar */}
       <div className="p-3 bg-neutral-900 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2.5">

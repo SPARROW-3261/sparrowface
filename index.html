@@ -15,6 +15,43 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        // Prevent MediaPipe / TensorFlow Lite WASM C++ stderr INFO messages from triggering error catches
+        var origError = console.error;
+        console.error = function() {
+          var msg = arguments && arguments[0] ? String(arguments[0]) : '';
+          if (
+            msg.indexOf('XNNPACK delegate') !== -1 ||
+            msg.indexOf('TensorFlow Lite') !== -1 ||
+            msg.indexOf('INFO:') === 0 ||
+            msg.indexOf('INFO: Created') !== -1
+          ) {
+            if (console.info) {
+              console.info.apply(console, arguments);
+            }
+            return;
+          }
+          origError.apply(console, arguments);
+        };
+
+        var origWarn = console.warn;
+        console.warn = function() {
+          var msg = arguments && arguments[0] ? String(arguments[0]) : '';
+          if (
+            msg.indexOf('XNNPACK delegate') !== -1 ||
+            msg.indexOf('TensorFlow Lite') !== -1 ||
+            msg.indexOf('INFO:') === 0
+          ) {
+            if (console.info) {
+              console.info.apply(console, arguments);
+            }
+            return;
+          }
+          origWarn.apply(console, arguments);
+        };
+      })();
+    </script>
   </head>
   <body class="bg-neutral-950 text-neutral-100 antialiased font-sans select-none overflow-x-hidden">
     <div id="root"></div>

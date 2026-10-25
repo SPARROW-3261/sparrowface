@@ -340,7 +340,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 text-neutral-100 overflow-y-auto select-none p-5 space-y-6">
+    <div className="absolute inset-0 overflow-y-auto flex flex-col bg-neutral-950 text-neutral-100 select-none p-4 sm:p-5 space-y-4 sm:space-y-5">
       {/* Toast Feedback Notification */}
       {feedbackMessage && (
         <div className="sticky top-2 z-50 self-center px-4 py-2 bg-cyan-600/90 text-white border border-cyan-400/50 rounded-xl shadow-2xl backdrop-blur-md text-xs font-semibold flex items-center gap-2 animate-bounce">
@@ -350,7 +350,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
       )}
 
       {/* Top Profile Summary Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-neutral-900/70 border border-neutral-800 backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-neutral-900/80 border border-neutral-800 backdrop-blur-md shrink-0 shadow-md">
         <div className="flex items-center gap-3.5">
           {currentUser?.avatarUrl ? (
             <img
@@ -386,7 +386,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleSnapshotCurrentSettings}
-            className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium border border-neutral-700 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95"
+            className="px-3 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium border border-neutral-700 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             title="Saves current live calibration and slider values as a new preset"
           >
             <Save className="w-3.5 h-3.5 text-cyan-400" />
@@ -395,7 +395,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
 
           <button
             onClick={openCreateModal}
-            className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-md shadow-cyan-950 active:scale-95"
+            className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-md shadow-cyan-950 active:scale-95 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Custom Preset</span>
@@ -404,7 +404,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
           {onOpenLogin && (
             <button
               onClick={onOpenLogin}
-              className="px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs font-medium transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs font-medium transition-colors cursor-pointer"
             >
               Switch Account
             </button>
@@ -414,11 +414,11 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
 
       {/* Currently Active Preset Hero Banner */}
       {activePreset && (
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-950/50 via-neutral-900/80 to-neutral-900/50 border border-cyan-500/40 p-5 shadow-xl">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-950/60 via-neutral-900/90 to-neutral-900/60 border border-cyan-500/40 p-4 sm:p-5 shadow-xl shrink-0">
           <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[11px] font-bold uppercase tracking-wider animate-pulse">
                   <CheckCircle2 className="w-3 h-3 text-cyan-400" />
@@ -502,7 +502,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
       )}
 
       {/* Preset Cards Section */}
-      <div className="space-y-3">
+      <div className="space-y-3 shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -647,7 +647,7 @@ export const ProfilePresetsApp: React.FC<ProfilePresetsAppProps> = ({
       </div>
 
       {/* Lighting & Seating Ergonomics Advice Card */}
-      <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-3">
+      <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800/80 space-y-3 shrink-0 mb-4">
         <h4 className="text-xs font-bold text-white flex items-center gap-2">
           <Info className="w-4 h-4 text-cyan-400" />
           <span>Lighting & Ergonomic Advice for Best Tracking</span>

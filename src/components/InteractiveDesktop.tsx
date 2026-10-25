@@ -58,7 +58,7 @@ interface InteractiveDesktopProps {
   onUpdateConfig: (newConfig: Partial<TrackingConfig>) => void;
   onRecenter: () => void;
   onToggleCursorFreeze: () => void;
-  onStartCalibration: () => void;
+  onStartCalibration: (tab?: 'head' | 'blink') => void;
   onOpenNativeBridge: () => void;
   isCameraStarted?: boolean;
   onStartCamera?: () => void;
@@ -186,10 +186,10 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isMinimized: false,
     isMaximized: false,
     zIndex: 25,
-    x: 70,
-    y: 40,
+    x: 60,
+    y: 20,
     width: 740,
-    height: 560,
+    height: 520,
   },
   {
     id: 'profile_presets',
@@ -199,10 +199,10 @@ const INITIAL_WINDOWS: DesktopWindow[] = [
     isMinimized: false,
     isMaximized: false,
     zIndex: 24,
-    x: 90,
-    y: 35,
-    width: 780,
-    height: 570,
+    x: 50,
+    y: 18,
+    width: 760,
+    height: 510,
   },
 ];
 
@@ -473,10 +473,12 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
                 onClick={() => bringToFront(win.id)}
                 style={{
                   position: 'absolute',
-                  left: win.isMaximized ? 0 : `${win.x}px`,
-                  top: win.isMaximized ? 0 : `${win.y}px`,
+                  left: win.isMaximized ? 0 : `${Math.max(4, win.x)}px`,
+                  top: win.isMaximized ? 0 : `${Math.max(4, win.y)}px`,
                   width: win.isMaximized ? '100%' : `${win.width}px`,
                   height: win.isMaximized ? 'calc(100% - 48px)' : `${win.height}px`,
+                  maxHeight: 'calc(100% - 48px)',
+                  maxWidth: 'calc(100% - 8px)',
                   zIndex: win.zIndex,
                   display: win.isMinimized ? 'none' : 'flex',
                 }}
@@ -525,7 +527,7 @@ export const InteractiveDesktop: React.FC<InteractiveDesktopProps> = ({
                 </div>
 
                 {/* Window App Content */}
-                <div className="flex-1 overflow-hidden relative">
+                <div className="flex-1 min-h-0 overflow-hidden relative">
                   {win.id === 'camera' && (
                     <CameraVisionApp
                       trackingState={trackingState}

@@ -41,6 +41,7 @@ interface SpeechRecognitionEventLike {
   results: {
     length: number;
     [index: number]: {
+      length: number;
       isFinal: boolean;
       [index: number]: {
         transcript: string;
@@ -110,108 +111,139 @@ export interface VoiceIntent {
  * Specifically checks for trigger words like 'Sparrow recenter', 'Sparrow stop', 'Sparrow open notes', etc.
  */
 export function parseVoiceIntent(transcript: string): VoiceIntent | null {
+  if (!transcript) return null;
+
+  // Clean punctuation and normalize whitespace
   const clean = transcript
     .trim()
     .toLowerCase()
-    .replace(/[.,!?;:]/g, '');
+    .replace(/[.,!?;:\"'’`-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   if (!clean) return null;
 
-  // Match trigger words 'sparrow' or 'hey sparrow' or 'ok sparrow'
-  const triggerRegex = /(?:hey\s+|ok\s+)?sparrow\s*(.*)/i;
-  const match = clean.match(triggerRegex);
+  // Phonetic wake words (handles browser STT mishearings of "sparrow")
+  // e.g. "hey sparrow", "ok sparrow", "sparrow", "sparrows", "sparrow's", "sparow", "spero", "sparo", "arrow", "narrow", "speed", "spiral", "spar", "para"
+  const wakeWordPattern = /^(?:(?:hey|ok|okay|hi|hello)\s+)?(?:sparrows?|sparrow['’]?s|sparow|spero|sparo|arrow|narrow|speed|spiral|spar|para|spara)\b\s*/i;
+  const hasWakeWord = wakeWordPattern.test(clean);
+  let remainder = clean.replace(wakeWordPattern, '').trim();
 
-  // If phrase doesn't contain trigger word 'sparrow', ignore to prevent accidental ambient triggers
-  if (!match) {
-    return null;
-  }
+  // Strip conversational politeness and filler prefixes
+  const fillerPrefixPattern = /^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|just\s+|i\s+want\s+to\s+|let['’]?s\s+|go\s+ahead\s+and\s+|try\s+to\s+)+/i;
+  remainder = remainder.replace(fillerPrefixPattern, '').trim();
 
-  const remainder = match[1].trim();
+  // Strip conversational trailing fillers (e.g. "recenter please", "click now")
+  const fillerSuffixPattern = /\s+(?:please|now|thanks|thank\s+you)$/i;
+  remainder = remainder.replace(fillerSuffixPattern, '').trim();
 
-  // If user just said 'sparrow' without an action
+  // If user only spoke the wake word without a command
   if (!remainder) {
-    return {
-      raw: transcript,
-      command: 'sparrow',
-      action: 'unknown',
-      label: 'Listening... (Say "recenter", "stop", "open notes", or "help")',
-    };
+    if (hasWakeWord) {
+      return {
+        raw: transcript,
+        command: 'Sparrow',
+        action: 'unknown',
+        label: 'Listening... (Say "recenter", "click", "stop", or "open notes")',
+      };
+    }
+    return null;
   }
 
   // 1. Recenter Cursor & Head Alignment
   if (
     remainder === 'recenter' ||
     remainder === 'center' ||
+    remainder === 're center' ||
     remainder === 'reset' ||
-    remainder.startsWith('recenter') ||
-    remainder.includes('center cursor') ||
+    remainder === 'recenter cursor' ||
+    remainder === 'center cursor' ||
+    remainder === 'reset cursor' ||
+    remainder === 'recalibrate center' ||
+    remainder === 'reset head' ||
+    remainder === 'center head' ||
+    remainder === 'snap center' ||
+    remainder.endsWith('recenter') ||
+    remainder.endsWith('center cursor') ||
+    remainder.endsWith('recenter cursor') ||
     remainder.includes('recenter cursor') ||
-    remainder.includes('reset cursor') ||
-    remainder.includes('recalibrate center')
+    remainder.includes('center cursor')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Recenter` : 'Recenter',
       action: 'recenter',
       label: 'Recenter Cursor to Head Rest Position',
     };
   }
 
-  // Stop / Close Camera
+  // 2. Stop / Close Camera
   if (
     remainder === 'stop camera' ||
     remainder === 'close camera' ||
     remainder === 'turn off camera' ||
     remainder === 'camera off' ||
-    remainder === 'kill camera'
+    remainder === 'kill camera' ||
+    remainder === 'disable camera' ||
+    remainder.includes('stop camera') ||
+    remainder.includes('turn off camera') ||
+    remainder.includes('close camera')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Stop Camera` : 'Stop Camera',
       action: 'stop_camera',
       label: 'Turn Off Camera Stream & Tracking',
     };
   }
 
-  // Start / Open Camera
+  // 3. Start / Open Camera
   if (
     remainder === 'start camera' ||
     remainder === 'open camera' ||
     remainder === 'turn on camera' ||
-    remainder === 'camera on'
+    remainder === 'camera on' ||
+    remainder === 'enable camera' ||
+    remainder.includes('start camera') ||
+    remainder.includes('turn on camera')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Start Camera` : 'Start Camera',
       action: 'start_camera',
       label: 'Open Camera & Resume Tracking',
     };
   }
 
-  // 2. Stop Cursor / Freeze Tracking
+  // 4. Stop Cursor / Freeze Tracking
   if (
     remainder === 'stop' ||
     remainder === 'freeze' ||
     remainder === 'pause' ||
     remainder === 'halt' ||
     remainder === 'hold' ||
-    remainder.startsWith('stop') ||
+    remainder === 'stop cursor' ||
+    remainder === 'freeze cursor' ||
+    remainder === 'stop moving' ||
+    remainder === 'stop tracking' ||
+    remainder === 'pause cursor' ||
+    remainder === 'pause tracking' ||
+    remainder.endsWith('stop') ||
+    remainder.endsWith('freeze') ||
+    remainder.endsWith('pause') ||
     remainder.includes('freeze cursor') ||
     remainder.includes('stop cursor') ||
-    remainder.includes('stop moving') ||
-    remainder.includes('stop moving cursor') ||
-    remainder.includes('stop tracking') ||
-    remainder.includes('pause cursor')
+    remainder.includes('stop tracking')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Stop` : 'Stop',
       action: 'stop',
       label: 'Pause Cursor Movement & Freeze Tracking',
     };
   }
 
-  // 3. Start Cursor / Resume Tracking
+  // 5. Start Cursor / Resume Tracking
   if (
     remainder === 'start' ||
     remainder === 'resume' ||
@@ -220,185 +252,175 @@ export function parseVoiceIntent(transcript: string): VoiceIntent | null {
     remainder === 'go' ||
     remainder === 'play' ||
     remainder === 'continue' ||
-    remainder.startsWith('resume') ||
-    remainder.includes('start tracking') ||
+    remainder === 'start cursor' ||
+    remainder === 'resume cursor' ||
+    remainder === 'start tracking' ||
+    remainder === 'resume tracking' ||
+    remainder === 'unfreeze cursor' ||
+    remainder.endsWith('resume') ||
+    remainder.endsWith('unfreeze') ||
     remainder.includes('resume tracking') ||
-    remainder.includes('unfreeze cursor') ||
-    remainder.includes('move cursor')
+    remainder.includes('start tracking') ||
+    remainder.includes('unfreeze cursor')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Start` : 'Start',
       action: 'start',
       label: 'Resume Cursor Movement & Live Tracking',
     };
   }
 
-  // 4. Mouse Clicks
-  if (remainder === 'double click' || remainder.includes('double click')) {
+  // 6. Double Click (check before single click)
+  if (
+    remainder === 'double click' ||
+    remainder === 'double tap' ||
+    remainder === 'double press' ||
+    remainder.endsWith('double click') ||
+    remainder.includes('double click')
+  ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Double Click` : 'Double Click',
       action: 'double_click',
       label: 'Double Click at Cursor Position',
     };
   }
 
+  // 7. Right Click (check before single click)
   if (
     remainder === 'right click' ||
+    remainder === 'secondary click' ||
+    remainder === 'context menu' ||
+    remainder === 'right tap' ||
+    remainder.endsWith('right click') ||
     remainder.includes('right click') ||
-    remainder.includes('secondary click') ||
-    remainder.includes('context menu')
+    remainder.includes('secondary click')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Right Click` : 'Right Click',
       action: 'right_click',
       label: 'Right Click (Context Menu)',
     };
   }
 
+  // 8. Primary Left Click
   if (
     remainder === 'click' ||
     remainder === 'left click' ||
     remainder === 'select' ||
     remainder === 'press' ||
-    remainder.includes('left click')
+    remainder === 'tap' ||
+    remainder === 'mouse click' ||
+    remainder === 'single click' ||
+    remainder.endsWith('click') ||
+    remainder.endsWith('left click') ||
+    remainder.endsWith('press')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Click` : 'Click',
       action: 'click',
       label: 'Primary Left Click',
     };
   }
 
-  // 5. Open Specific Apps
-  const appMap: { [pattern: string]: { id: string; name: string } } = {
-    camera: { id: 'camera', name: 'Face Camera & Sensor' },
-    sensor: { id: 'camera', name: 'Face Camera & Sensor' },
-    vision: { id: 'camera', name: 'Face Camera & Sensor' },
-    webcam: { id: 'camera', name: 'Face Camera & Sensor' },
+  // 9. Open Specific Apps
+  const appMappings: Array<{ id: string; name: string; keys: string[] }> = [
+    { id: 'notes', name: 'Quick Notes', keys: ['notes', 'note', 'notepad', 'memo', 'quick notes', 'scratchpad'] },
+    { id: 'paint', name: 'Face Paint & Canvas', keys: ['paint', 'canvas', 'drawing', 'draw', 'sketch', 'art', 'face paint'] },
+    { id: 'calculator', name: 'Calculator', keys: ['calculator', 'calc', 'math'] },
+    { id: 'keyboard', name: 'Accessibility Keyboard', keys: ['keyboard', 'keys', 'virtual keyboard', 'on screen keyboard'] },
+    { id: 'browser', name: 'Web Navigator', keys: ['browser', 'web', 'internet', 'navigator'] },
+    { id: 'settings', name: 'Tracking & Sensitivity Settings', keys: ['settings', 'options', 'sensitivity', 'preferences', 'config'] },
+    { id: 'profile_presets', name: 'Profile & Environment Presets', keys: ['presets', 'preset', 'profile', 'profiles', 'lighting'] },
+    { id: 'performance_logger', name: 'Performance & Jitter Logger', keys: ['logger', 'log', 'telemetry', 'performance', 'jitter', 'metrics', 'diagnostics'] },
+    { id: 'target_practice', name: 'Target Practice Drill', keys: ['target', 'aim', 'practice', 'target practice', 'drill'] },
+    { id: 'camera', name: 'Face Camera & Sensor', keys: ['camera', 'sensor', 'webcam', 'vision'] },
+  ];
 
-    notes: { id: 'notes', name: 'Quick Notes' },
-    note: { id: 'notes', name: 'Quick Notes' },
-    notepad: { id: 'notes', name: 'Quick Notes' },
-    memo: { id: 'notes', name: 'Quick Notes' },
+  const appPrefixPattern = /^(?:open|launch|show|start\s+app|switch\s+to|go\s+to)\s+/i;
+  const isExplicitAppCommand = appPrefixPattern.test(remainder);
+  const candidateAppKey = remainder.replace(appPrefixPattern, '').trim();
 
-    paint: { id: 'paint', name: 'Face Paint & Canvas' },
-    drawing: { id: 'paint', name: 'Face Paint & Canvas' },
-    draw: { id: 'paint', name: 'Face Paint & Canvas' },
-    canvas: { id: 'paint', name: 'Face Paint & Canvas' },
+  for (const app of appMappings) {
+    const keyMatched = app.keys.some((k) =>
+      candidateAppKey === k ||
+      candidateAppKey.startsWith(`${k} `) ||
+      (isExplicitAppCommand && candidateAppKey.includes(k)) ||
+      (hasWakeWord && candidateAppKey.includes(k))
+    );
 
-    calculator: { id: 'calculator', name: 'Calculator' },
-    calc: { id: 'calculator', name: 'Calculator' },
-    math: { id: 'calculator', name: 'Calculator' },
-
-    keyboard: { id: 'keyboard', name: 'Accessibility Keyboard' },
-    keys: { id: 'keyboard', name: 'Accessibility Keyboard' },
-    virtualkeyboard: { id: 'keyboard', name: 'Accessibility Keyboard' },
-
-    browser: { id: 'browser', name: 'Web Navigator' },
-    web: { id: 'browser', name: 'Web Navigator' },
-    internet: { id: 'browser', name: 'Web Navigator' },
-
-    settings: { id: 'settings', name: 'Tracking & Sensitivity Settings' },
-    options: { id: 'settings', name: 'Tracking & Sensitivity Settings' },
-    config: { id: 'settings', name: 'Tracking & Sensitivity Settings' },
-    preferences: { id: 'settings', name: 'Tracking & Sensitivity Settings' },
-
-    preset: { id: 'profile_presets', name: 'Profile & Environment Presets' },
-    presets: { id: 'profile_presets', name: 'Profile & Environment Presets' },
-    profile: { id: 'profile_presets', name: 'Profile & Environment Presets' },
-    profiles: { id: 'profile_presets', name: 'Profile & Environment Presets' },
-    lighting: { id: 'profile_presets', name: 'Profile & Environment Presets' },
-
-    logger: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-    log: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-    performance: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-    telemetry: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-    jitter: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-    metrics: { id: 'performance_logger', name: 'Performance & Jitter Logger' },
-
-    target: { id: 'target_practice', name: 'Target Practice Drill' },
-    aim: { id: 'target_practice', name: 'Target Practice Drill' },
-    practice: { id: 'target_practice', name: 'Target Practice Drill' },
-    drill: { id: 'target_practice', name: 'Target Practice Drill' },
-  };
-
-  let candidateApp = remainder;
-  if (candidateApp.startsWith('open ')) {
-    candidateApp = candidateApp.substring(5).trim();
-  } else if (candidateApp.startsWith('launch ')) {
-    candidateApp = candidateApp.substring(7).trim();
-  } else if (candidateApp.startsWith('show ')) {
-    candidateApp = candidateApp.substring(5).trim();
-  } else if (candidateApp.startsWith('start app ')) {
-    candidateApp = candidateApp.substring(10).trim();
-  }
-
-  for (const [key, val] of Object.entries(appMap)) {
-    if (candidateApp === key || candidateApp.includes(key)) {
+    if (keyMatched) {
       return {
         raw: transcript,
-        command: `Sparrow ${remainder}`,
+        command: hasWakeWord ? `Sparrow Open ${app.name}` : `Open ${app.name}`,
         action: 'open_app',
-        targetAppId: val.id,
-        label: `Open ${val.name}`,
+        targetAppId: app.id,
+        label: `Open ${app.name}`,
       };
     }
   }
 
-  // 6. Calibrate
+  // 10. Calibrate Wizard
   if (
     remainder === 'calibrate' ||
     remainder === 'calibration' ||
     remainder.includes('calibration wizard') ||
-    remainder.includes('start calibration')
+    remainder.includes('start calibration') ||
+    remainder.includes('calibrate face') ||
+    remainder.includes('calibrate head')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Calibrate` : 'Calibrate',
       action: 'calibrate',
       label: 'Launch 5-Point Calibration Wizard',
     };
   }
 
-  // 7. Desktop Bridge
+  // 11. Desktop Bridge
   if (
     remainder === 'bridge' ||
     remainder.includes('desktop bridge') ||
     remainder.includes('host bridge') ||
-    remainder.includes('connect bridge')
+    remainder.includes('connect bridge') ||
+    remainder.includes('os bridge')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Bridge` : 'Host Bridge',
       action: 'bridge',
       label: 'Open Host OS Desktop Bridge',
     };
   }
 
-  // 8. Login / Account
+  // 12. Login / Account
   if (
     remainder === 'login' ||
+    remainder === 'log in' ||
     remainder === 'sign in' ||
     remainder === 'account' ||
-    remainder.includes('user profile')
+    remainder.includes('sign in') ||
+    remainder.includes('user profile') ||
+    remainder.includes('user account')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Sign In` : 'Sign In',
       action: 'login',
       label: 'Open Account & Sign In',
     };
   }
 
-  // 9. Audio & Voice Mute / Unmute
+  // 13. Audio & Voice Mute / Unmute
   if (
     remainder === 'mute' ||
     remainder === 'mute voice' ||
     remainder === 'mute mic' ||
+    remainder === 'mic off' ||
+    remainder === 'silence' ||
     remainder.includes('mute voice') ||
     remainder.includes('mute mic') ||
     remainder.includes('mute sound') ||
@@ -406,15 +428,17 @@ export function parseVoiceIntent(transcript: string): VoiceIntent | null {
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Mute` : 'Mute Voice',
       action: 'mute',
       label: 'Mute Audio Feedback & Voice Listening',
     };
   }
+
   if (
     remainder === 'unmute' ||
     remainder === 'unmute voice' ||
     remainder === 'unmute mic' ||
+    remainder === 'mic on' ||
     remainder.includes('unmute voice') ||
     remainder.includes('unmute mic') ||
     remainder.includes('sound on') ||
@@ -422,33 +446,41 @@ export function parseVoiceIntent(transcript: string): VoiceIntent | null {
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Unmute` : 'Unmute Voice',
       action: 'unmute',
       label: 'Unmute Audio & Voice Recognition',
     };
   }
 
-  // 10. Help / Commands cheat sheet
+  // 14. Help / Commands cheat sheet
   if (
     remainder === 'help' ||
     remainder === 'commands' ||
+    remainder === 'voice commands' ||
     remainder.includes('voice commands') ||
-    remainder.includes('what can i say')
+    remainder.includes('what can i say') ||
+    remainder.includes('cheat sheet')
   ) {
     return {
       raw: transcript,
-      command: `Sparrow ${remainder}`,
+      command: hasWakeWord ? `Sparrow Help` : 'Help',
       action: 'help',
       label: 'Show Voice Command Cheatsheet',
     };
   }
 
-  return {
-    raw: transcript,
-    command: `Sparrow ${remainder}`,
-    action: 'unknown',
-    label: `Command "${remainder}" not recognized (Say "Sparrow help" for list)`,
-  };
+  // If user explicitly said the wake word ("Sparrow ...") but the command was unrecognized
+  if (hasWakeWord) {
+    return {
+      raw: transcript,
+      command: `Sparrow ${remainder}`,
+      action: 'unknown',
+      label: `Command "${remainder}" not recognized (Say "help" or "recenter")`,
+    };
+  }
+
+  // If no wake word and no direct command matched, ignore to avoid accidental ambient triggers
+  return null;
 }
 
 function loadSavedTrackingConfig(): TrackingConfig {
@@ -510,6 +542,7 @@ export default function App() {
   const [isCameraStarted, setIsCameraStarted] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCalibrating, setIsCalibrating] = useState<boolean>(false);
+  const [calibrationInitialTab, setCalibrationInitialTab] = useState<'head' | 'blink'>('head');
   const [isNativeModalOpen, setIsNativeModalOpen] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(authService.getCurrentUser());
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
@@ -803,8 +836,9 @@ export default function App() {
       const rec = new SpeechRecognitionAPI();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = 'en-US';
-      rec.maxAlternatives = 1;
+      const browserLang = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US';
+      rec.lang = browserLang.toLowerCase().startsWith('en') ? browserLang : 'en-US';
+      rec.maxAlternatives = 3;
 
       rec.onstart = () => {
         if (!isCancelledRef.current && isVoiceEnabledRef.current) {
@@ -815,39 +849,77 @@ export default function App() {
 
       rec.onresult = (event: SpeechRecognitionEventLike) => {
         if (isCancelledRef.current || !isVoiceEnabledRef.current) return;
-        let interimText = '';
-        let finalText = '';
 
+        const candidatePhrases: string[] = [];
+        let latestSegmentFinal = '';
+        let latestInterim = '';
+
+        // Extract transcripts across all alternatives for current speech segments
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalText += transcript;
+          const res = event.results[i];
+          if (!res) continue;
+
+          for (let j = 0; j < res.length; ++j) {
+            const transcript = res[j]?.transcript?.trim();
+            if (transcript && !candidatePhrases.includes(transcript)) {
+              candidatePhrases.push(transcript);
+            }
+          }
+
+          if (res.isFinal) {
+            latestSegmentFinal = res[0]?.transcript?.trim() || '';
           } else {
-            interimText += transcript;
+            latestInterim = res[0]?.transcript?.trim() || '';
           }
         }
 
-        const currentText = (finalText || interimText).trim();
-        setVoiceTranscript(currentText);
+        const displayTranscript = latestSegmentFinal || latestInterim;
+        if (displayTranscript) {
+          setVoiceTranscript(displayTranscript);
+        }
 
-        const textToProcess = (finalText || interimText).trim();
-        if (textToProcess) {
-          const intent = parseVoiceIntent(textToProcess);
+        // Search for recognized command intent across all alternatives
+        let matchedIntent: VoiceIntent | null = null;
+        for (const candidate of candidatePhrases) {
+          const intent = parseVoiceIntent(candidate);
           if (intent && intent.action !== 'unknown') {
-            const now = Date.now();
-            // Debounce repeated identical triggers within 1.2 seconds
-            if (
-              now - lastProcessedTimeRef.current > 1200 ||
-              lastProcessedCommandRef.current !== intent.command
-            ) {
-              lastProcessedTimeRef.current = now;
-              lastProcessedCommandRef.current = intent.command;
-              executeVoiceIntent(intent);
+            matchedIntent = intent;
+            break;
+          }
+        }
 
-              // Auto-clear transcript after successful execution
-              setTimeout(() => {
-                if (!isCancelledRef.current) setVoiceTranscript('');
-              }, 1400);
+        // If no definitive command matched, check fallback on explicit wake-word utterance
+        if (!matchedIntent && latestSegmentFinal) {
+          const fallbackIntent = parseVoiceIntent(latestSegmentFinal);
+          if (fallbackIntent && fallbackIntent.action === 'unknown') {
+            matchedIntent = fallbackIntent;
+          }
+        }
+
+        if (matchedIntent) {
+          const now = Date.now();
+          const isSameCommand = lastProcessedCommandRef.current === matchedIntent.command;
+          const timeSinceLast = now - lastProcessedTimeRef.current;
+
+          // Debounce repeated identical triggers within 800ms, while allowing distinct triggers immediately
+          if (matchedIntent.action === 'unknown' || !isSameCommand || timeSinceLast > 800) {
+            lastProcessedTimeRef.current = now;
+            lastProcessedCommandRef.current = matchedIntent.command;
+            executeVoiceIntent(matchedIntent);
+
+            // Auto-clear transcript display after successful execution
+            setTimeout(() => {
+              if (!isCancelledRef.current) setVoiceTranscript('');
+            }, 1200);
+
+            // If Chrome has accumulated many results in continuous mode, cycle recognition cleanly
+            // so historical accumulated strings do not degrade recognition latency or accuracy
+            if (event.results.length > 5) {
+              try {
+                rec.stop();
+              } catch {
+                // ignore
+              }
             }
           }
         }
@@ -864,18 +936,23 @@ export default function App() {
           setIsVoiceListening(false);
           return;
         }
+        if (event.error === 'audio-capture') {
+          setVoiceError('No microphone detected. Please check your audio input devices.');
+          setIsVoiceListening(false);
+          return;
+        }
         console.warn('Speech recognition notice:', event.error);
       };
 
       rec.onend = () => {
         activeRecognitionRef.current = null;
         if (!isCancelledRef.current && isVoiceEnabledRef.current) {
-          // Restart with a freshly instantiated SpeechRecognition object
+          // Rapid restart with a freshly instantiated SpeechRecognition object to eliminate silence dead zones
           restartTimeoutRef.current = window.setTimeout(() => {
             if (!isCancelledRef.current && isVoiceEnabledRef.current) {
               startVoiceEngine();
             }
-          }, 250);
+          }, 60);
         } else {
           setIsVoiceListening(false);
         }
@@ -1166,7 +1243,10 @@ export default function App() {
             onUpdateConfig={handleUpdateConfig}
             onRecenter={handleRecenter}
             onToggleCursorFreeze={handleToggleCursorFreeze}
-            onStartCalibration={() => setIsCalibrating(true)}
+            onStartCalibration={(tab: 'head' | 'blink' = 'head') => {
+              setCalibrationInitialTab(tab);
+              setIsCalibrating(true);
+            }}
             onOpenNativeBridge={() => setIsNativeModalOpen(true)}
             isCameraStarted={isCameraStarted}
             onStartCamera={startCamera}
@@ -1274,12 +1354,12 @@ export default function App() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               </span>
-              <span className="text-neutral-300 text-[11px] font-medium">
+              <span className="text-neutral-300 text-[11px] font-medium max-w-[220px] truncate">
                 {voiceTranscript ? (
                   <span className="text-cyan-300 font-mono">"{voiceTranscript}"</span>
                 ) : (
                   <span>
-                    Listening: say <strong className="text-cyan-400">"Sparrow ..."</strong>
+                    Listening: say <strong className="text-cyan-400">"recenter"</strong> or <strong className="text-cyan-400">"click"</strong>
                   </span>
                 )}
               </span>
@@ -1391,10 +1471,13 @@ export default function App() {
         </div>
       )}
 
-      {/* 5-Point Calibration Wizard Modal */}
+      {/* Calibration Wizard Modal (5-Point Head Motion + 3-Step Blink Learning) */}
       {isCalibrating && (
         <CalibrationWizard
           trackingState={trackingState}
+          config={config}
+          onUpdateConfig={handleUpdateConfig}
+          initialTab={calibrationInitialTab}
           onSaveCalibration={handleSaveCalibration}
           onClose={() => setIsCalibrating(false)}
         />
